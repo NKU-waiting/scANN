@@ -1,0 +1,8 @@
+:root {
+  font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f2933;
+  background: #f5f7fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button { cursor: pointer; }

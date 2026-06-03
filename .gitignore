@@ -1,0 +1,43 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.python-version
+
+# ---- Flask / runtime ----
+instance/
+*.sqlite3
+*.db
+.env
+.env.local
+
+# ---- 数据与索引产物（体积大，不入库）----
+data/*
+!data/.gitkeep
+*.h5ad
+*.index
+*.faiss
+indices/
+
+# ---- Node / 前端 ----
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# ---- 测试 / 覆盖率 ----
+.pytest_cache/
+.coverage
+htmlcov/
