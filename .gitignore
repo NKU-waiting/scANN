@@ -36,6 +36,8 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 *.swp
+.codex
+.agents
 
 # ---- 测试 / 覆盖率 ----
 .pytest_cache/
