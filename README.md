@@ -20,46 +20,6 @@
 
 ---
 
-## 中期检查范围
-
-中期检查的完整[CHECKLIST](./doc/MID_TERM_CHECKLIST.md)，中期的目标是跑通并展示完整主链路：
-
-```text
-单细胞数据读取 → 向量化表示 → ANN 索引构建 → Top-K 相似细胞检索 → Web 展示
-```
-
-优先级说明：
-
-- `P0`：中期必须完成的最小实现。
-- `P1`：建议完成的加分项，用于提升展示完整度。
-- `P2`：中期可以不实现，推迟到结项阶段。
-
----
-
-## 目录结构
-
-```
-scANN/
-├── backend/                  # Flask REST API
-│   ├── app/
-│   │   ├── __init__.py       # 应用工厂 create_app()
-│   │   ├── api/              # 路由蓝图: auth / datasets / index / search / eval
-│   │   ├── core/            # 配置、扩展
-│   │   ├── services/
-│   │   │   ├── data_loader.py    # .h5ad 读取与预处理（含假数据生成）
-│   │   │   ├── index/            # 可插拔索引: base / faiss_index / flat_index
-│   │   │   └── search.py         # Top-K 检索服务
-│   │   └── models/          # 用户 / 数据集 数据模型（预留）
-│   ├── requirements.txt
-│   └── run.py               # 入口: python run.py
-├── frontend/                 # Vue3 + Vite，查询页 + 结果展示骨架
-├── data/                     # 数据集存放（默认 gitignore）
-├── doc/                      # 实验要求、需求分析、中期检查清单
-└── README.md
-```
-
----
-
 ## 快速开始
 
 ### 1. 后端（Flask）
@@ -117,6 +77,46 @@ npm run dev
 ```
 
 前端默认 `http://127.0.0.1:5173`，已配置代理将 `/api` 转发到后端 `5000` 端口。
+
+---
+
+## 中期检查范围
+
+中期检查的完整[CHECKLIST](./doc/MID_TERM_CHECKLIST.md)，中期的目标是跑通并展示完整主链路：
+
+```text
+单细胞数据读取 → 向量化表示 → ANN 索引构建 → Top-K 相似细胞检索 → Web 展示
+```
+
+优先级说明：
+
+- `P0`：中期必须完成的最小实现。
+- `P1`：建议完成的加分项，用于提升展示完整度。
+- `P2`：中期可以不实现，推迟到结项阶段。
+
+---
+
+## 目录结构
+
+```
+scANN/
+├── backend/                  # Flask REST API
+│   ├── app/
+│   │   ├── __init__.py       # 应用工厂 create_app()
+│   │   ├── api/              # 路由蓝图: auth / datasets / index / search / eval
+│   │   ├── core/            # 配置、扩展
+│   │   ├── services/
+│   │   │   ├── data_loader.py    # .h5ad 读取与预处理（含假数据生成）
+│   │   │   ├── index/            # 可插拔索引: base / faiss_index / flat_index
+│   │   │   └── search.py         # Top-K 检索服务
+│   │   └── models/          # 用户 / 数据集 数据模型（预留）
+│   ├── requirements.txt
+│   └── run.py               # 入口: python run.py
+├── frontend/                 # Vue3 + Vite，查询页 + 结果展示骨架
+├── data/                     # 数据集存放（默认 gitignore）
+├── doc/                      # 实验要求、需求分析、中期检查清单
+└── README.md
+```
 
 ---
 
