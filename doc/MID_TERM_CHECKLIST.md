@@ -55,8 +55,8 @@
 
 | 完成 | 检查项 | 当前状态 | 涉及文件 | 验收方式 |
 | --- | --- | --- | --- | --- |
-| [ ] | 接通真实 `.h5ad` 数据加载 API | `load_h5ad` 函数已有，API 未接通 | `backend/app/services/data_loader.py`、`backend/app/api/datasets.py`、`backend/app/services/search.py` | POST `/api/datasets/load` 传数据路径后能加载数据并继续查询 |
-| [ ] | `.h5ad` 读取有基础校验 | 函数已有，校验不足 | `backend/app/services/data_loader.py` | 对空数据、非二维数据、维度异常给出明确错误 |
+| [x] | 接通真实 `.h5ad` 数据加载 API | 已接通 `load_h5ad` 与数据集切换/索引重建 | `backend/app/services/data_loader.py`、`backend/app/api/datasets.py`、`backend/app/services/search.py` | POST `/api/datasets/load` 传数据路径后能加载数据并继续查询 |
+| [x] | `.h5ad` 读取有基础校验 | 已校验空数据、非二维、零维度和非法数值 | `backend/app/services/data_loader.py` | 对空数据、非二维数据、维度异常给出明确错误 |
 | [ ] | 前端支持查询向量输入 | 后端已有 `search_by_vector`，前端无入口 | `frontend/src/App.vue`、`frontend/src/style.css`、必要时调整 `backend/app/api/search.py` | 页面切换到向量查询模式，输入逗号分隔向量后返回 Top-K |
 | [ ] | 同一页面支持索引切换对比 | 已能选择索引，但无对比呈现 | `frontend/src/App.vue`、`backend/app/api/search.py`、`backend/app/services/search.py` | 同一查询可切换 `flat` 与 `hnsw/ivf`，展示不同耗时 |
 | [ ] | 展示索引构建耗时 | 后端 `build_index` 已返回 `build_ms`，前端未完整展示 | `backend/app/services/search.py`、`backend/app/api/index.py`、`frontend/src/App.vue` | 构建索引后页面显示 `build_ms` |

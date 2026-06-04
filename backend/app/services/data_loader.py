@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -40,16 +41,55 @@ def load_h5ad(path: str, use_obsm: str | None = "X_pca") -> CellDataset:
     import anndata as ad  # 延迟导入，避免无依赖时整体不可用
 
     adata = ad.read_h5ad(path)
-    if use_obsm and use_obsm in adata.obsm:
-        vectors = np.asarray(adata.obsm[use_obsm], dtype=np.float32)
+    if use_obsm:
+        if use_obsm in adata.obsm:
+            source = f"obsm[{use_obsm}]"
+            vectors = _to_float32_matrix(adata.obsm[use_obsm], source)
+        elif use_obsm == "X_pca":
+            source = "X"
+            X = adata.X
+            vectors = _to_float32_matrix(X, source)
+        else:
+            raise ValueError(f"obsm 字段不存在: {use_obsm}")
     else:
+        source = "X"
         X = adata.X
-        vectors = np.asarray(X.todense() if hasattr(X, "todense") else X, dtype=np.float32)
+        vectors = _to_float32_matrix(X, source)
 
     cell_ids = [str(i) for i in adata.obs_names]
+    vectors = _validate_vectors(vectors, len(cell_ids), source)
     obs = {col: adata.obs[col].astype(str).tolist() for col in adata.obs.columns}
-    name = path.split("/")[-1]
+    name = Path(path).name
     return CellDataset(name=name, vectors=vectors, cell_ids=cell_ids, obs=obs)
+
+
+def _to_float32_matrix(values, source: str) -> np.ndarray:
+    """Convert AnnData matrix-like values into a float32 ndarray."""
+    if hasattr(values, "toarray"):
+        values = values.toarray()
+    elif hasattr(values, "todense"):
+        values = values.todense()
+    try:
+        return np.asarray(values, dtype=np.float32)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{source} 无法转换为 float32 向量矩阵") from exc
+
+
+def _validate_vectors(vectors: np.ndarray, n_obs: int, source: str) -> np.ndarray:
+    """Validate the cell-by-feature vector matrix used for indexing."""
+    if vectors.ndim != 2:
+        raise ValueError(f"{source} 必须是二维矩阵，收到 {vectors.ndim} 维")
+    if vectors.shape[0] == 0:
+        raise ValueError("数据集为空：至少需要 1 个细胞")
+    if vectors.shape[1] == 0:
+        raise ValueError("向量维度异常：至少需要 1 个特征")
+    if vectors.shape[0] != n_obs:
+        raise ValueError(
+            f"向量行数与细胞数量不一致：向量 {vectors.shape[0]} 行，细胞 {n_obs} 个"
+        )
+    if not np.isfinite(vectors).all():
+        raise ValueError("向量数据包含 NaN 或 Inf")
+    return np.ascontiguousarray(vectors, dtype=np.float32)
 
 
 def make_demo_dataset(n_cells: int = 2000, dim: int = 50, n_types: int = 5,

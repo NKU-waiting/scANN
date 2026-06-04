@@ -33,9 +33,9 @@ class SearchService:
         self.dataset = make_demo_dataset(Config.DEMO_N_CELLS, Config.DEMO_DIM)
         self.build_index(self.index_type, self.metric)
 
-    def set_dataset(self, dataset: CellDataset) -> None:
+    def set_dataset(self, dataset: CellDataset) -> dict:
         self.dataset = dataset
-        self.build_index(self.index_type, self.metric)
+        return self.build_index(self.index_type, self.metric)
 
     # ---- 索引 ----
     def build_index(self, index_type: str | None = None, metric: str | None = None) -> dict:
