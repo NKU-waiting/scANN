@@ -34,22 +34,22 @@
 
 | 完成 | 检查项 | 当前状态 | 涉及文件 | 验收方式 |
 | --- | --- | --- | --- | --- |
-| [ ] | 后端服务可以启动 | 有 Flask 应用工厂和入口 | `backend/run.py`、`backend/app/__init__.py`、`backend/requirements.txt`、`README.md` | 启动后访问 `/api/health` 返回 `200` 和 `status=ok` |
-| [ ] | 前端服务可以启动并能代理后端 API | 有 Vue3 + Vite 页面和代理配置 | `frontend/package.json`、`frontend/vite.config.js`、`frontend/src/App.vue` | 前端页面能正常打开，并能获取 `/api/index/status` |
-| [ ] | demo 单细胞数据能自动初始化 | 已有 `make_demo_dataset` | `backend/app/services/data_loader.py`、`backend/app/services/search.py` | 首次访问 `/api/index/status` 后返回数据集名称、细胞数、维度 |
-| [ ] | 向量数据结构正确 | 已有 `CellDataset` | `backend/app/services/data_loader.py` | 数据向量为二维 `float32`，形状为 `n_cells × dim` |
-| [ ] | 至少有一个精确检索基线 | 已有 NumPy Flat | `backend/app/services/index/flat_index.py`、`backend/app/services/index/__init__.py` | `index_type=flat` 能构建并查询 |
-| [ ] | 至少有一个 ANN 索引可用 | 已有 FAISS IVF/HNSW/PQ 实现 | `backend/app/services/index/faiss_index.py`、`backend/app/services/index/__init__.py`、`backend/requirements.txt` | `index_type=hnsw` 或 `index_type=ivf` 能构建并查询 |
-| [ ] | 索引构建 API 可用 | 已有 `/api/index/build` | `backend/app/api/index.py`、`backend/app/services/search.py` | POST `/api/index/build` 返回当前索引状态 |
-| [ ] | 索引状态 API 可用 | 已有 `/api/index/status` | `backend/app/api/index.py`、`backend/app/services/search.py` | GET `/api/index/status` 返回 `dataset/n_cells/dim/index/metric/ready` |
-| [ ] | 按细胞编号 Top-K 查询可用 | 已有 `/api/search` 与 `search_by_cell` | `backend/app/api/search.py`、`backend/app/services/search.py` | POST `/api/search` 传 `cell_id/top_k/index_type/metric` 返回 Top-K |
-| [ ] | 查询结果包含细胞信息 | 已有基础字段 | `backend/app/services/search.py` | 每条结果包含 `cell_id/cell_name/distance`，有元信息时包含 `cell_type` |
-| [ ] | 查询耗时能返回并展示 | 后端已有 `query_ms`，前端已有展示 | `backend/app/services/search.py`、`frontend/src/App.vue` | 查询后页面显示查询耗时 |
-| [ ] | 前端能完成一次完整查询 | 已有单页查询表单 | `frontend/src/App.vue`、`frontend/src/style.css` | 页面输入 `cell_id/top_k/index_type/metric` 后展示结果表格 |
-| [ ] | 参数错误有明确提示 | 当前部分异常已返回 400 | `backend/app/api/search.py`、`backend/app/services/search.py`、`frontend/src/App.vue` | 非法 `cell_id`、缺少查询对象、向量维度错误时页面能显示错误 |
-| [ ] | README 有可复现启动和演示步骤 | 已有快速开始，但需与实际实现保持一致 | `README.md` | 按 README 能启动后端、启动前端、完成一次 Top-K 查询 |
-| [ ] | Git 提交记录可体现开发过程 | 本地已有提交记录 | Git 仓库 | 中期提交前将代码推送到 GitHub，并保留清晰提交记录 |
-| [ ] | 中期现场演示流程准备完成 | 文档已有建议流程 | `doc/MID_TERM_CHECKLIST.md`、可选 `README.md` | 能在 5-8 分钟内演示启动、建索引、查询和结果展示 |
+| [x] | 后端服务可以启动 | 有 Flask 应用工厂和入口 | `backend/run.py`、`backend/app/__init__.py`、`backend/requirements.txt`、`README.md` | 启动后访问 `/api/health` 返回 `200` 和 `status=ok` |
+| [x] | 前端服务可以启动并能代理后端 API | 有 Vue3 + Vite 页面和代理配置 | `frontend/package.json`、`frontend/vite.config.js`、`frontend/src/App.vue` | 前端页面能正常打开，并能获取 `/api/index/status` |
+| [x] | demo 单细胞数据能自动初始化 | 已有 `make_demo_dataset` | `backend/app/services/data_loader.py`、`backend/app/services/search.py` | 首次访问 `/api/index/status` 后返回数据集名称、细胞数、维度 |
+| [x] | 向量数据结构正确 | 已有 `CellDataset` | `backend/app/services/data_loader.py` | 数据向量为二维 `float32`，形状为 `n_cells × dim` |
+| [x] | 至少有一个精确检索基线 | 已有 NumPy Flat | `backend/app/services/index/flat_index.py`、`backend/app/services/index/__init__.py` | `index_type=flat` 能构建并查询 |
+| [x] | 至少有一个 ANN 索引可用 | 已有 FAISS IVF/HNSW/PQ 实现 | `backend/app/services/index/faiss_index.py`、`backend/app/services/index/__init__.py`、`backend/requirements.txt` | `index_type=hnsw` 或 `index_type=ivf` 能构建并查询 |
+| [x] | 索引构建 API 可用 | 已有 `/api/index/build` | `backend/app/api/index.py`、`backend/app/services/search.py` | POST `/api/index/build` 返回当前索引状态 |
+| [x] | 索引状态 API 可用 | 已有 `/api/index/status` | `backend/app/api/index.py`、`backend/app/services/search.py` | GET `/api/index/status` 返回 `dataset/n_cells/dim/index/metric/ready` |
+| [x] | 按细胞编号 Top-K 查询可用 | 已有 `/api/search` 与 `search_by_cell` | `backend/app/api/search.py`、`backend/app/services/search.py` | POST `/api/search` 传 `cell_id/top_k/index_type/metric` 返回 Top-K |
+| [x] | 查询结果包含细胞信息 | 已有基础字段 | `backend/app/services/search.py` | 每条结果包含 `cell_id/cell_name/distance`，有元信息时包含 `cell_type` |
+| [x] | 查询耗时能返回并展示 | 后端已有 `query_ms`，前端已有展示 | `backend/app/services/search.py`、`frontend/src/App.vue` | 查询后页面显示查询耗时 |
+| [x] | 前端能完成一次完整查询 | 已有单页查询表单 | `frontend/src/App.vue`、`frontend/src/style.css` | 页面输入 `cell_id/top_k/index_type/metric` 后展示结果表格 |
+| [x] | 参数错误有明确提示 | 当前部分异常已返回 400 | `backend/app/api/search.py`、`backend/app/services/search.py`、`frontend/src/App.vue` | 非法 `cell_id`、缺少查询对象、向量维度错误时页面能显示错误 |
+| [x] | README 有可复现启动和演示步骤 | 已有快速开始，但需与实际实现保持一致 | `README.md` | 按 README 能启动后端、启动前端、完成一次 Top-K 查询 |
+| [x] | Git 提交记录可体现开发过程 | 本地已有提交记录 | Git 仓库 | 中期提交前将代码推送到 GitHub，并保留清晰提交记录 |
+| [x] | 中期现场演示流程准备完成 | 文档已有建议流程 | `doc/MID_TERM_CHECKLIST.md`、可选 `README.md` | 能在 5-8 分钟内演示启动、建索引、查询和结果展示 |
 
 ### 2.2 P1：建议完成的加分项
 
@@ -60,11 +60,11 @@
 | [ ] | 前端支持查询向量输入 | 后端已有 `search_by_vector`，前端无入口 | `frontend/src/App.vue`、`frontend/src/style.css`、必要时调整 `backend/app/api/search.py` | 页面切换到向量查询模式，输入逗号分隔向量后返回 Top-K |
 | [ ] | 同一页面支持索引切换对比 | 已能选择索引，但无对比呈现 | `frontend/src/App.vue`、`backend/app/api/search.py`、`backend/app/services/search.py` | 同一查询可切换 `flat` 与 `hnsw/ivf`，展示不同耗时 |
 | [ ] | 展示索引构建耗时 | 后端 `build_index` 已返回 `build_ms`，前端未完整展示 | `backend/app/services/search.py`、`backend/app/api/index.py`、`frontend/src/App.vue` | 构建索引后页面显示 `build_ms` |
-| [ ] | 条件检索可稳定演示 | 已有 `cell_type` 过滤雏形 | `backend/app/services/search.py`、`backend/app/api/search.py`、`frontend/src/App.vue` | 输入 `cell_type` 后结果只返回该类型细胞 |
+| [x] | 条件检索可稳定演示 | 已有 `cell_type` 过滤雏形 | `backend/app/services/search.py`、`backend/app/api/search.py`、`frontend/src/App.vue` | 输入 `cell_type` 后结果只返回该类型细胞 |
 | [ ] | 增加简单结果可视化 | 当前只有表格 | `frontend/src/App.vue`、`frontend/src/style.css` | 用距离条形图、类型分布或查询摘要展示 Top-K 结果 |
 | [ ] | 增加演示数据说明卡片 | 当前状态栏信息较少 | `frontend/src/App.vue`、`README.md` | 页面展示数据集名称、细胞数、维度、当前索引和可用元信息字段 |
 | [ ] | 增加轻量 API 测试 | 当前没有测试文件 | `backend/tests/test_search_api.py`、`backend/requirements.txt` | 测试覆盖健康检查、建索引、查询成功和错误参数 |
-| [ ] | 补充中期演示脚本 | 当前只有 checklist | `README.md` 或 `doc/` 下演示说明文档 | 按脚本能稳定完成 5-8 分钟演示 |
+| [x] | 补充中期演示脚本 | README 已有 5-8 分钟演示流程 | `README.md` 或 `doc/` 下演示说明文档 | 按脚本能稳定完成 5-8 分钟演示 |
 
 ### 2.3 P2：中期可以不实现的内容
 
