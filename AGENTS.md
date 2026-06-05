@@ -41,7 +41,7 @@ No automated test suite is currently checked in. When adding tests, place backen
 
 ## Commit & Pull Request Guidelines
 
-Use the project commit pattern `<action>: <description>`, for example `fix: handle empty search results` or `doc: update setup notes`. Prefer actions such as `update`, `fix`, `delete`, and `doc`. Pull requests should include a summary, commands run, linked issues or checklist items, and screenshots for frontend UI changes. Note dependency or data-format changes explicitly.
+Use the project commit pattern `<action>: <message>`, for example `fix: handle empty search results` or `doc: update setup notes`. Prefer actions such as `update`, `fix`, `delete`, and `doc`. Pull requests should include a summary, commands run, linked issues or checklist items, and screenshots for frontend UI changes. Note dependency or data-format changes explicitly. Better let each commit not only contain a message, but also a corresponding detailed description.
 
 ## Security & Configuration Tips
 
