@@ -61,7 +61,7 @@
 | [ ] | 同一页面支持索引切换对比 | 已能选择索引，但无对比呈现 | `frontend/src/App.vue`、`backend/app/api/search.py`、`backend/app/services/search.py` | 同一查询可切换 `flat` 与 `hnsw/ivf`，展示不同耗时 |
 | [x] | 展示索引构建耗时 | 前端已增加构建索引按钮和耗时展示 | `frontend/src/App.vue` | 构建索引后页面显示 `build_ms` |
 | [x] | 条件检索可稳定演示 | 已有 `cell_type` 过滤雏形 | `backend/app/services/search.py`、`backend/app/api/search.py`、`frontend/src/App.vue` | 输入 `cell_type` 后结果只返回该类型细胞 |
-| [ ] | 增加简单结果可视化 | 当前只有表格 | `frontend/src/App.vue`、`frontend/src/style.css` | 用距离条形图、类型分布或查询摘要展示 Top-K 结果 |
+| [x] | 增加简单结果可视化 | 已增加查询摘要、距离条形图和类型分布 | `frontend/src/App.vue` | 用距离条形图、类型分布或查询摘要展示 Top-K 结果 |
 | [ ] | 增加演示数据说明卡片 | 当前状态栏信息较少 | `frontend/src/App.vue`、`README.md` | 页面展示数据集名称、细胞数、维度、当前索引和可用元信息字段 |
 | [ ] | 增加轻量 API 测试 | 当前没有测试文件 | `backend/tests/test_search_api.py`、`backend/requirements.txt` | 测试覆盖健康检查、建索引、查询成功和错误参数 |
 | [x] | 补充中期演示脚本 | README 已有 5-8 分钟演示流程 | `README.md` 或 `doc/` 下演示说明文档 | 按脚本能稳定完成 5-8 分钟演示 |

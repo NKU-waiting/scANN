@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 
 const status = ref(null)
 const form = ref({ cell_id: 0, top_k: 5, index_type: 'flat', metric: 'l2', cell_type: '', vector: '' })
@@ -9,6 +9,74 @@ const buildInfo = ref(null)
 const loading = ref(false)
 const building = ref(false)
 const error = ref('')
+
+const resultRows = computed(() => result.value?.results || [])
+
+const resultMetric = computed(() => {
+  const metricMatch = result.value?.index?.match(/\(([^)]+)\)$/)
+  return metricMatch?.[1] || form.value.metric
+})
+
+const valueLabel = computed(() => resultMetric.value === 'ip' ? '内积得分' : '距离')
+
+const bestLabel = computed(() => resultMetric.value === 'ip' ? '最高得分' : '最近结果')
+
+const worstLabel = computed(() => resultMetric.value === 'ip' ? '最低得分' : '最远结果')
+
+const distanceStats = computed(() => {
+  if (!resultRows.value.length) return null
+
+  const distances = resultRows.value.map(row => Number(row.distance))
+  const min = Math.min(...distances)
+  const max = Math.max(...distances)
+  const isInnerProduct = resultMetric.value === 'ip'
+  return {
+    min,
+    max,
+    best: isInnerProduct ? max : min,
+    worst: isInnerProduct ? min : max,
+    nearest: resultRows.value[0],
+    farthest: resultRows.value[resultRows.value.length - 1],
+  }
+})
+
+const distanceBars = computed(() => {
+  if (!distanceStats.value) return []
+
+  const span = distanceStats.value.max - distanceStats.value.min
+  return resultRows.value.map((row, index) => {
+    const distance = Number(row.distance)
+    const normalized = span === 0 ? 1 : (distance - distanceStats.value.min) / span
+    return {
+      ...row,
+      rank: index + 1,
+      distance,
+      width: Math.max(8, Math.round(normalized * 100)),
+    }
+  })
+})
+
+const typeDistribution = computed(() => {
+  if (!resultRows.value.length) return []
+
+  const counts = resultRows.value.reduce((acc, row) => {
+    const label = row.cell_type || '未标注'
+    acc[label] = (acc[label] || 0) + 1
+    return acc
+  }, {})
+
+  return Object.entries(counts)
+    .map(([label, count]) => ({
+      label,
+      count,
+      percent: Math.round((count / resultRows.value.length) * 100),
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+})
+
+function formatNumber(value) {
+  return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
+}
 
 async function fetchStatus() {
   const r = await fetch('/api/index/status')
@@ -138,11 +206,73 @@ onMounted(fetchStatus)
 
     <p class="error" v-if="error">⚠ {{ error }}</p>
 
-    <section v-if="result">
+    <section v-if="result" class="results">
       <div class="meta">
         返回 <b>{{ result.returned }}</b> 条 · 索引 <b>{{ result.index }}</b> ·
         查询耗时 <b>{{ result.query_ms }} ms</b>
       </div>
+      <div v-if="resultRows.length" class="visual-grid">
+        <article class="visual-card summary-card">
+          <div class="visual-heading">
+            <h2>查询摘要</h2>
+            <span>{{ valueLabel }}</span>
+          </div>
+          <div class="summary-stats" v-if="distanceStats">
+            <div>
+              <span>{{ bestLabel }}</span>
+              <b>{{ formatNumber(distanceStats.best) }}</b>
+            </div>
+            <div>
+              <span>{{ worstLabel }}</span>
+              <b>{{ formatNumber(distanceStats.worst) }}</b>
+            </div>
+            <div>
+              <span>细胞类型</span>
+              <b>{{ typeDistribution.length }}</b>
+            </div>
+          </div>
+          <p class="summary-note" v-if="distanceStats">
+            首位结果 {{ distanceStats.nearest.cell_name }}，编号 {{ distanceStats.nearest.cell_id }}。
+          </p>
+        </article>
+
+        <article class="visual-card distance-card">
+          <div class="visual-heading">
+            <h2>{{ valueLabel }}条形图</h2>
+            <span>Top {{ resultRows.length }}</span>
+          </div>
+          <div class="distance-list">
+            <div class="distance-item" v-for="row in distanceBars" :key="`bar-${row.cell_id}`">
+              <div class="distance-label">
+                <span>#{{ row.rank }} {{ row.cell_name }}</span>
+                <b>{{ formatNumber(row.distance) }}</b>
+              </div>
+              <div class="distance-track" :aria-label="`${row.cell_name} ${valueLabel} ${formatNumber(row.distance)}`">
+                <span :style="{ width: `${row.width}%` }"></span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="visual-card type-card">
+          <div class="visual-heading">
+            <h2>类型分布</h2>
+            <span>{{ typeDistribution.length }} 类</span>
+          </div>
+          <div class="type-list">
+            <div class="type-item" v-for="type in typeDistribution" :key="type.label">
+              <div class="type-label">
+                <span>{{ type.label }}</span>
+                <b>{{ type.count }}</b>
+              </div>
+              <div class="type-track" :aria-label="`${type.label} 占比 ${type.percent}%`">
+                <span :style="{ width: `${type.percent}%` }"></span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+      <p v-else class="empty-state">未返回匹配结果，请调整 Top-K 或过滤条件后重试。</p>
       <table>
         <thead>
           <tr><th>#</th><th>细胞编号</th><th>名称</th><th>细胞类型</th><th>距离</th></tr>
@@ -192,8 +322,40 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .highlight { color: #dc2626; font-weight: 700; }
 .error { color: #dc2626; margin-top: 8px; }
 .meta { margin: 20px 0 8px; font-size: 14px; color: #374151; }
+.visual-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 1.35fr);
+  gap: 12px; margin: 12px 0; }
+.visual-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+.summary-card { border-top: 3px solid #0f766e; }
+.distance-card { grid-row: span 2; border-top: 3px solid #2563eb; }
+.type-card { border-top: 3px solid #d97706; }
+.visual-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 12px; }
+.visual-heading h2 { margin: 0; font-size: 15px; color: #111827; }
+.visual-heading span { color: #6b7280; font-size: 12px; white-space: nowrap; }
+.summary-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.summary-stats div { background: #f9fafb; border-radius: 7px; padding: 9px 10px; min-width: 0; }
+.summary-stats span { display: block; color: #6b7280; font-size: 12px; margin-bottom: 3px; }
+.summary-stats b { color: #111827; font-size: 16px; overflow-wrap: anywhere; }
+.summary-note { margin: 12px 0 0; color: #4b5563; font-size: 13px; line-height: 1.5; }
+.distance-list, .type-list { display: flex; flex-direction: column; gap: 10px; }
+.distance-label, .type-label { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 5px; color: #374151; font-size: 13px; }
+.distance-label span, .type-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.distance-label b, .type-label b { color: #111827; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.distance-track, .type-track { height: 9px; overflow: hidden; border-radius: 999px; background: #edf2f7; }
+.distance-track span, .type-track span { display: block; height: 100%; border-radius: inherit; }
+.distance-track span { background: linear-gradient(90deg, #38bdf8, #2563eb); }
+.type-track span { background: linear-gradient(90deg, #fbbf24, #d97706); }
+.empty-state { background: #fff; border: 1px dashed #d1d5db; border-radius: 8px; color: #6b7280;
+  padding: 14px; font-size: 14px; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px;
   overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
 th, td { padding: 9px 12px; text-align: left; font-size: 14px; border-bottom: 1px solid #f0f1f3; }
 th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+@media (max-width: 760px) {
+  .visual-grid { grid-template-columns: 1fr; }
+  .distance-card { grid-row: auto; }
+  .summary-stats { grid-template-columns: 1fr; }
+}
 </style>
