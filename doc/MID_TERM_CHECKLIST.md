@@ -59,7 +59,7 @@
 | [x] | `.h5ad` 读取有基础校验 | 已校验空数据、非二维、零维度和非法数值 | `backend/app/services/data_loader.py` | 对空数据、非二维数据、维度异常给出明确错误 |
 | [x] | 前端支持查询向量输入 | 已增加向量查询模式切换，逗号分隔输入 | `frontend/src/App.vue` | 页面切换到向量查询模式，输入逗号分隔向量后返回 Top-K |
 | [ ] | 同一页面支持索引切换对比 | 已能选择索引，但无对比呈现 | `frontend/src/App.vue`、`backend/app/api/search.py`、`backend/app/services/search.py` | 同一查询可切换 `flat` 与 `hnsw/ivf`，展示不同耗时 |
-| [ ] | 展示索引构建耗时 | 后端 `build_index` 已返回 `build_ms`，前端未完整展示 | `backend/app/services/search.py`、`backend/app/api/index.py`、`frontend/src/App.vue` | 构建索引后页面显示 `build_ms` |
+| [x] | 展示索引构建耗时 | 前端已增加构建索引按钮和耗时展示 | `frontend/src/App.vue` | 构建索引后页面显示 `build_ms` |
 | [x] | 条件检索可稳定演示 | 已有 `cell_type` 过滤雏形 | `backend/app/services/search.py`、`backend/app/api/search.py`、`frontend/src/App.vue` | 输入 `cell_type` 后结果只返回该类型细胞 |
 | [ ] | 增加简单结果可视化 | 当前只有表格 | `frontend/src/App.vue`、`frontend/src/style.css` | 用距离条形图、类型分布或查询摘要展示 Top-K 结果 |
 | [ ] | 增加演示数据说明卡片 | 当前状态栏信息较少 | `frontend/src/App.vue`、`README.md` | 页面展示数据集名称、细胞数、维度、当前索引和可用元信息字段 |

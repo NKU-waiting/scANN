@@ -5,7 +5,9 @@ const status = ref(null)
 const form = ref({ cell_id: 0, top_k: 5, index_type: 'flat', metric: 'l2', cell_type: '', vector: '' })
 const queryMode = ref('cell') // 'cell' | 'vector'
 const result = ref(null)
+const buildInfo = ref(null)
 const loading = ref(false)
+const building = ref(false)
 const error = ref('')
 
 async function fetchStatus() {
@@ -44,6 +46,26 @@ async function search() {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function buildIndex() {
+  building.value = true
+  error.value = ''
+  try {
+    const r = await fetch('/api/index/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index_type: form.value.index_type, metric: form.value.metric }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || '构建失败')
+    buildInfo.value = data
+    await fetchStatus()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    building.value = false
   }
 }
 
@@ -104,7 +126,14 @@ onMounted(fetchStatus)
         <label>限定细胞类型（可选）</label>
         <input v-model="form.cell_type" placeholder="如 type_1" />
       </div>
-      <button :disabled="loading" @click="search">{{ loading ? '检索中…' : '检索' }}</button>
+      <div class="btn-group">
+        <button class="btn-primary" :disabled="loading" @click="search">{{ loading ? '检索中…' : '检索' }}</button>
+        <button class="btn-build" :disabled="building" @click="buildIndex">{{ building ? '构建中…' : '构建索引' }}</button>
+      </div>
+    </section>
+
+    <section class="build-info" v-if="buildInfo">
+      索引 <b>{{ buildInfo.index }}</b> 构建完成 · 耗时 <b class="highlight">{{ buildInfo.build_ms }} ms</b>
     </section>
 
     <p class="error" v-if="error">⚠ {{ error }}</p>
@@ -152,10 +181,16 @@ header h1 { margin: 0 0 4px; font-size: 22px; }
 .field.wide { flex: 1 1 240px; }
 .field label { font-size: 12px; color: #6b7280; }
 .field input, .field select { padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 7px; font-size: 14px; }
-button { padding: 9px 22px; border: none; border-radius: 8px; background: #2563eb; color: #fff;
+.btn-group { display: flex; gap: 8px; align-items: flex-end; }
+.btn-primary { padding: 9px 22px; border: none; border-radius: 8px; background: #2563eb; color: #fff;
   font-size: 14px; }
-button:disabled { opacity: .6; }
-.error { color: #dc2626; }
+.btn-build { padding: 9px 16px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151;
+  font-size: 13px; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+.build-info { background: #eff6ff; padding: 10px 16px; border-radius: 8px; margin-top: 12px;
+  font-size: 14px; color: #1e40af; }
+.highlight { color: #dc2626; font-weight: 700; }
+.error { color: #dc2626; margin-top: 8px; }
 .meta { margin: 20px 0 8px; font-size: 14px; color: #374151; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px;
   overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
