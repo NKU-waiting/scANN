@@ -57,6 +57,7 @@ class SearchService:
             "index": self.index.name if self.index else None,
             "index_type": self.index_type,
             "metric": self.metric,
+            "metadata_fields": sorted(self.dataset.obs.keys()) if self.dataset else [],
             "ready": self.index is not None,
         }
 

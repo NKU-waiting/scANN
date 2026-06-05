@@ -2,13 +2,42 @@
 import { computed, ref, onMounted } from 'vue'
 
 const status = ref(null)
-const form = ref({ cell_id: 0, top_k: 5, index_type: 'flat', metric: 'l2', cell_type: '', vector: '' })
+const form = ref({
+  cell_id: 0,
+  top_k: 5,
+  index_type: 'flat',
+  compare_index_type: 'hnsw',
+  metric: 'l2',
+  cell_type: '',
+  vector: '',
+})
 const queryMode = ref('cell') // 'cell' | 'vector'
 const result = ref(null)
 const buildInfo = ref(null)
+const comparisonResults = ref([])
 const loading = ref(false)
 const building = ref(false)
+const comparing = ref(false)
 const error = ref('')
+
+const indexLabels = {
+  flat: 'Flat',
+  faiss: 'FAISS-Flat',
+  ivf: 'FAISS-IVF',
+  hnsw: 'FAISS-HNSW',
+  pq: 'FAISS-PQ',
+}
+
+const metadataFields = computed(() => status.value?.metadata_fields || [])
+
+const datasetSummary = computed(() => [
+  { label: '数据集', value: status.value?.dataset || '未加载' },
+  { label: '细胞数', value: formatNumber(status.value?.n_cells || 0) },
+  { label: '向量维度', value: formatNumber(status.value?.dim || 0) },
+  { label: '当前索引', value: status.value?.index || '未构建' },
+  { label: '距离度量', value: status.value?.metric === 'ip' ? 'IP（内积）' : 'L2（欧氏）' },
+  { label: '元信息字段', value: metadataFields.value.length ? metadataFields.value.join('、') : '无' },
+])
 
 const resultRows = computed(() => result.value?.results || [])
 
@@ -78,6 +107,42 @@ function formatNumber(value) {
   return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
 }
 
+function indexLabel(indexType) {
+  return indexLabels[indexType] || indexType
+}
+
+function parseVectorInput() {
+  const vec = form.value.vector.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
+  if (vec.length === 0) throw new Error('请输入有效的查询向量（逗号分隔）')
+  return vec
+}
+
+function buildSearchPayload(indexType = form.value.index_type) {
+  const payload = {
+    top_k: Number(form.value.top_k),
+    index_type: indexType,
+    metric: form.value.metric,
+  }
+  if (queryMode.value === 'vector') {
+    payload.vector = parseVectorInput()
+  } else {
+    payload.cell_id = Number(form.value.cell_id)
+  }
+  if (form.value.cell_type) payload.cell_type = form.value.cell_type
+  return payload
+}
+
+async function requestSearch(indexType) {
+  const r = await fetch('/api/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildSearchPayload(indexType)),
+  })
+  const data = await r.json()
+  if (!r.ok) throw new Error(data.error || '检索失败')
+  return data
+}
+
 async function fetchStatus() {
   const r = await fetch('/api/index/status')
   status.value = await r.json()
@@ -88,27 +153,7 @@ async function search() {
   error.value = ''
   result.value = null
   try {
-    const payload = {
-      top_k: Number(form.value.top_k),
-      index_type: form.value.index_type,
-      metric: form.value.metric,
-    }
-    if (queryMode.value === 'vector') {
-      const vec = form.value.vector.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
-      if (vec.length === 0) throw new Error('请输入有效的查询向量（逗号分隔）')
-      payload.vector = vec
-    } else {
-      payload.cell_id = Number(form.value.cell_id)
-    }
-    if (form.value.cell_type) payload.cell_type = form.value.cell_type
-    const r = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    const data = await r.json()
-    if (!r.ok) throw new Error(data.error || '检索失败')
-    result.value = data
+    result.value = await requestSearch(form.value.index_type)
     await fetchStatus()
   } catch (e) {
     error.value = e.message
@@ -137,6 +182,50 @@ async function buildIndex() {
   }
 }
 
+async function compareIndexes() {
+  comparing.value = true
+  error.value = ''
+  comparisonResults.value = []
+  const indexTypes = ['flat']
+  if (form.value.compare_index_type !== 'flat') indexTypes.push(form.value.compare_index_type)
+
+  try {
+    for (const indexType of indexTypes) {
+      try {
+        const data = await requestSearch(indexType)
+        const first = data.results?.[0]
+        comparisonResults.value = [
+          ...comparisonResults.value,
+          {
+            index_type: indexType,
+            label: indexLabel(indexType),
+            ok: true,
+            index: data.index,
+            query_ms: data.query_ms,
+            returned: data.returned,
+            first_cell: first?.cell_name || '-',
+            first_distance: first?.distance ?? null,
+          },
+        ]
+        result.value = data
+      } catch (e) {
+        comparisonResults.value = [
+          ...comparisonResults.value,
+          {
+            index_type: indexType,
+            label: indexLabel(indexType),
+            ok: false,
+            error: e.message,
+          },
+        ]
+      }
+    }
+    await fetchStatus()
+  } finally {
+    comparing.value = false
+  }
+}
+
 onMounted(fetchStatus)
 </script>
 
@@ -147,11 +236,17 @@ onMounted(fetchStatus)
       <p class="sub">输入查询细胞编号或向量，设置检索参数，获取 Top-K 相似细胞。</p>
     </header>
 
-    <section class="status" v-if="status">
-      <span>数据集：<b>{{ status.dataset }}</b></span>
-      <span>细胞数：<b>{{ status.n_cells }}</b></span>
-      <span>维度：<b>{{ status.dim }}</b></span>
-      <span>当前索引：<b>{{ status.index || '未构建' }}</b></span>
+    <section class="dataset-card" v-if="status">
+      <div class="section-heading">
+        <h2>演示数据说明</h2>
+        <span>{{ status.ready ? '索引就绪' : '索引未构建' }}</span>
+      </div>
+      <div class="dataset-grid">
+        <div class="dataset-item" v-for="item in datasetSummary" :key="item.label">
+          <span>{{ item.label }}</span>
+          <b>{{ item.value }}</b>
+        </div>
+      </div>
     </section>
 
     <!-- 查询模式切换 -->
@@ -194,9 +289,21 @@ onMounted(fetchStatus)
         <label>限定细胞类型（可选）</label>
         <input v-model="form.cell_type" placeholder="如 type_1" />
       </div>
+      <div class="field">
+        <label>对比索引</label>
+        <select v-model="form.compare_index_type">
+          <option value="hnsw">FAISS-HNSW</option>
+          <option value="ivf">FAISS-IVF</option>
+          <option value="faiss">FAISS-Flat</option>
+          <option value="pq">FAISS-PQ</option>
+        </select>
+      </div>
       <div class="btn-group">
         <button class="btn-primary" :disabled="loading" @click="search">{{ loading ? '检索中…' : '检索' }}</button>
         <button class="btn-build" :disabled="building" @click="buildIndex">{{ building ? '构建中…' : '构建索引' }}</button>
+        <button class="btn-compare" :disabled="comparing" @click="compareIndexes">
+          {{ comparing ? '对比中…' : '对比索引' }}
+        </button>
       </div>
     </section>
 
@@ -205,6 +312,32 @@ onMounted(fetchStatus)
     </section>
 
     <p class="error" v-if="error">⚠ {{ error }}</p>
+
+    <section class="comparison" v-if="comparisonResults.length">
+      <div class="section-heading">
+        <h2>索引对比</h2>
+        <span>Flat vs {{ indexLabel(form.compare_index_type) }}</span>
+      </div>
+      <div class="comparison-table">
+        <div class="comparison-row comparison-head">
+          <span>索引</span>
+          <span>查询耗时</span>
+          <span>返回数</span>
+          <span>首位结果</span>
+          <span>{{ valueLabel }}</span>
+        </div>
+        <div class="comparison-row" v-for="item in comparisonResults" :key="item.index_type">
+          <span>
+            <b>{{ item.label }}</b>
+            <small>{{ item.index || '未完成' }}</small>
+          </span>
+          <span>{{ item.ok ? `${item.query_ms} ms` : '失败' }}</span>
+          <span>{{ item.ok ? item.returned : '-' }}</span>
+          <span>{{ item.ok ? item.first_cell : item.error }}</span>
+          <span>{{ item.ok && item.first_distance !== null ? formatNumber(item.first_distance) : '-' }}</span>
+        </div>
+      </div>
+    </section>
 
     <section v-if="result" class="results">
       <div class="meta">
@@ -295,8 +428,16 @@ onMounted(fetchStatus)
 .page { max-width: 880px; margin: 0 auto; padding: 32px 20px; }
 header h1 { margin: 0 0 4px; font-size: 22px; }
 .sub { color: #6b7280; margin: 0 0 20px; }
-.status { display: flex; gap: 18px; flex-wrap: wrap; background: #fff; padding: 12px 16px;
-  border-radius: 10px; font-size: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.dataset-card, .comparison { background: #fff; padding: 16px; border-radius: 8px; margin-top: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 12px; }
+.section-heading h2 { margin: 0; font-size: 16px; color: #111827; }
+.section-heading span { color: #0f766e; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.dataset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dataset-item { background: #f9fafb; border: 1px solid #edf0f3; border-radius: 7px; padding: 10px; min-width: 0; }
+.dataset-item span { display: block; color: #6b7280; font-size: 12px; margin-bottom: 4px; }
+.dataset-item b { color: #111827; display: block; font-size: 14px; overflow-wrap: anywhere; }
 .panel { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
   background: #fff; padding: 18px 16px; border-radius: 10px; margin-top: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,.06); }
@@ -316,11 +457,21 @@ header h1 { margin: 0 0 4px; font-size: 22px; }
   font-size: 14px; }
 .btn-build { padding: 9px 16px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151;
   font-size: 13px; }
+.btn-compare { padding: 9px 16px; border: none; border-radius: 8px; background: #0f766e; color: #fff;
+  font-size: 13px; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 .build-info { background: #eff6ff; padding: 10px 16px; border-radius: 8px; margin-top: 12px;
   font-size: 14px; color: #1e40af; }
 .highlight { color: #dc2626; font-weight: 700; }
 .error { color: #dc2626; margin-top: 8px; }
+.comparison-table { display: grid; gap: 1px; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 8px;
+  background: #e5e7eb; }
+.comparison-row { display: grid; grid-template-columns: 1.1fr .85fr .6fr 1fr .75fr; gap: 10px;
+  align-items: center; background: #fff; padding: 10px 12px; color: #374151; font-size: 13px; }
+.comparison-row span { min-width: 0; overflow-wrap: anywhere; }
+.comparison-row b { display: block; color: #111827; font-size: 13px; }
+.comparison-row small { display: block; color: #6b7280; font-size: 12px; margin-top: 2px; }
+.comparison-head { background: #f9fafb; color: #6b7280; font-weight: 600; }
 .meta { margin: 20px 0 8px; font-size: 14px; color: #374151; }
 .visual-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 1.35fr);
   gap: 12px; margin: 12px 0; }
@@ -354,6 +505,9 @@ table { width: 100%; border-collapse: collapse; background: #fff; border-radius:
 th, td { padding: 9px 12px; text-align: left; font-size: 14px; border-bottom: 1px solid #f0f1f3; }
 th { background: #f9fafb; color: #6b7280; font-weight: 600; }
 @media (max-width: 760px) {
+  .dataset-grid { grid-template-columns: 1fr; }
+  .comparison-row { grid-template-columns: 1fr 1fr; }
+  .comparison-head { display: none; }
   .visual-grid { grid-template-columns: 1fr; }
   .distance-card { grid-row: auto; }
   .summary-stats { grid-template-columns: 1fr; }
