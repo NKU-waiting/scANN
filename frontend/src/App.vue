@@ -2,7 +2,8 @@
 import { ref, onMounted } from 'vue'
 
 const status = ref(null)
-const form = ref({ cell_id: 0, top_k: 5, index_type: 'flat', metric: 'l2', cell_type: '' })
+const form = ref({ cell_id: 0, top_k: 5, index_type: 'flat', metric: 'l2', cell_type: '', vector: '' })
+const queryMode = ref('cell') // 'cell' | 'vector'
 const result = ref(null)
 const loading = ref(false)
 const error = ref('')
@@ -18,10 +19,16 @@ async function search() {
   result.value = null
   try {
     const payload = {
-      cell_id: Number(form.value.cell_id),
       top_k: Number(form.value.top_k),
       index_type: form.value.index_type,
       metric: form.value.metric,
+    }
+    if (queryMode.value === 'vector') {
+      const vec = form.value.vector.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
+      if (vec.length === 0) throw new Error('请输入有效的查询向量（逗号分隔）')
+      payload.vector = vec
+    } else {
+      payload.cell_id = Number(form.value.cell_id)
     }
     if (form.value.cell_type) payload.cell_type = form.value.cell_type
     const r = await fetch('/api/search', {
@@ -47,7 +54,7 @@ onMounted(fetchStatus)
   <div class="page">
     <header>
       <h1>scANN · 单细胞近似最近邻检索</h1>
-      <p class="sub">输入查询细胞编号，设置检索参数，获取 Top-K 相似细胞。</p>
+      <p class="sub">输入查询细胞编号或向量，设置检索参数，获取 Top-K 相似细胞。</p>
     </header>
 
     <section class="status" v-if="status">
@@ -57,10 +64,20 @@ onMounted(fetchStatus)
       <span>当前索引：<b>{{ status.index || '未构建' }}</b></span>
     </section>
 
+    <!-- 查询模式切换 -->
+    <section class="mode-switch">
+      <button :class="{ active: queryMode === 'cell' }" @click="queryMode = 'cell'">按细胞编号查询</button>
+      <button :class="{ active: queryMode === 'vector' }" @click="queryMode = 'vector'">按向量查询</button>
+    </section>
+
     <section class="panel">
-      <div class="field">
+      <div class="field" v-if="queryMode === 'cell'">
         <label>查询细胞编号</label>
         <input type="number" v-model="form.cell_id" min="0" />
+      </div>
+      <div class="field wide" v-if="queryMode === 'vector'">
+        <label>查询向量（逗号分隔）</label>
+        <input v-model="form.vector" placeholder="如 0.1, 0.5, -0.3, ..." />
       </div>
       <div class="field">
         <label>Top-K</label>
@@ -124,9 +141,17 @@ header h1 { margin: 0 0 4px; font-size: 22px; }
 .panel { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
   background: #fff; padding: 18px 16px; border-radius: 10px; margin-top: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+/* 模式切换 */
+.mode-switch { display: flex; gap: 0; margin-bottom: 12px; }
+.mode-switch button { flex: 1; padding: 10px 0; border: 1px solid #d1d5db; background: #fff;
+  font-size: 14px; color: #6b7280; cursor: pointer; transition: all .15s; }
+.mode-switch button:first-child { border-radius: 8px 0 0 8px; }
+.mode-switch button:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+.mode-switch button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 .field { display: flex; flex-direction: column; gap: 4px; }
+.field.wide { flex: 1 1 240px; }
 .field label { font-size: 12px; color: #6b7280; }
-.field input, .field select { padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 7px; }
+.field input, .field select { padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 7px; font-size: 14px; }
 button { padding: 9px 22px; border: none; border-radius: 8px; background: #2563eb; color: #fff;
   font-size: 14px; }
 button:disabled { opacity: .6; }
