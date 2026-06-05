@@ -63,7 +63,7 @@
 | [x] | 条件检索可稳定演示 | 已有 `cell_type` 过滤雏形 | `backend/app/services/search.py`、`backend/app/api/search.py`、`frontend/src/App.vue` | 输入 `cell_type` 后结果只返回该类型细胞 |
 | [x] | 增加简单结果可视化 | 已增加查询摘要、距离条形图和类型分布 | `frontend/src/App.vue` | 用距离条形图、类型分布或查询摘要展示 Top-K 结果 |
 | [x] | 增加演示数据说明卡片 | 已增加数据集说明卡片，展示数据集、细胞数、维度、索引、度量和元信息字段 | `frontend/src/App.vue`、`backend/app/services/search.py` | 页面展示数据集名称、细胞数、维度、当前索引和可用元信息字段 |
-| [ ] | 增加轻量 API 测试 | 当前没有测试文件 | `backend/tests/test_search_api.py`、`backend/requirements.txt` | 测试覆盖健康检查、建索引、查询成功和错误参数 |
+| [x] | 增加轻量 API 测试 | 已增加 Flask test client 轻量测试，覆盖健康检查、建索引、查询成功和错误参数 | `backend/tests/test_search_api.py`、`backend/requirements.txt` | 测试覆盖健康检查、建索引、查询成功和错误参数 |
 | [x] | 补充中期演示脚本 | README 已有 5-8 分钟演示流程 | `README.md` 或 `doc/` 下演示说明文档 | 按脚本能稳定完成 5-8 分钟演示 |
 
 ### 2.3 P2：中期可以不实现的内容
