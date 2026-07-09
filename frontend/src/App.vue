@@ -1,6 +1,108 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 
+// ── 认证状态 ──────────────────────────────────────────────
+const token = ref(localStorage.getItem('scann_token') || '')
+const currentUser = ref(JSON.parse(localStorage.getItem('scann_user') || 'null'))
+const authMode = ref('login')
+const authForm = ref({ username: '', password: '' })
+const authLoading = ref(false)
+const authError = ref('')
+
+// ── 管理员用户管理 ────────────────────────────────────────
+const userList = ref([])
+const userListLoading = ref(false)
+const userListError = ref('')
+
+function bearerHeaders() {
+  return token.value ? { Authorization: `Bearer ${token.value}` } : {}
+}
+
+async function doLogin() {
+  authLoading.value = true
+  authError.value = ''
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: authForm.value.username, password: authForm.value.password }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || '登录失败')
+    token.value = data.token
+    currentUser.value = data.user
+    localStorage.setItem('scann_token', data.token)
+    localStorage.setItem('scann_user', JSON.stringify(data.user))
+    authForm.value = { username: '', password: '' }
+    if (data.user.role === 'admin') await loadUsers()
+  } catch (e) {
+    authError.value = e.message
+  } finally {
+    authLoading.value = false
+  }
+}
+
+async function doRegister() {
+  authLoading.value = true
+  authError.value = ''
+  try {
+    const r = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: authForm.value.username, password: authForm.value.password }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || '注册失败')
+    authMode.value = 'login'
+    authError.value = '注册成功，请登录'
+    authForm.value.password = ''
+  } catch (e) {
+    authError.value = e.message
+  } finally {
+    authLoading.value = false
+  }
+}
+
+function doLogout() {
+  token.value = ''
+  currentUser.value = null
+  userList.value = []
+  localStorage.removeItem('scann_token')
+  localStorage.removeItem('scann_user')
+}
+
+async function loadUsers() {
+  userListLoading.value = true
+  userListError.value = ''
+  try {
+    const r = await fetch('/api/auth/users', { headers: bearerHeaders() })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || '获取用户列表失败')
+    userList.value = data.users
+  } catch (e) {
+    userListError.value = e.message
+  } finally {
+    userListLoading.value = false
+  }
+}
+
+async function removeUser(userId) {
+  if (!confirm('确定删除该用户？')) return
+  try {
+    const r = await fetch(`/api/auth/users/${userId}`, {
+      method: 'DELETE',
+      headers: bearerHeaders(),
+    })
+    if (!r.ok) {
+      const data = await r.json()
+      throw new Error(data.error || '删除失败')
+    }
+    await loadUsers()
+  } catch (e) {
+    userListError.value = e.message
+  }
+}
+
 const status = ref(null)
 const form = ref({
   cell_id: 0,
@@ -261,15 +363,73 @@ async function runEval() {
   }
 }
 
-onMounted(fetchStatus)
+onMounted(async () => {
+  await fetchStatus()
+  if (currentUser.value?.role === 'admin' && token.value) await loadUsers()
+})
 </script>
 
 <template>
   <div class="page">
     <header>
-      <h1>scANN · 单细胞近似最近邻检索</h1>
-      <p class="sub">输入查询细胞编号或向量，设置检索参数，获取 Top-K 相似细胞。</p>
+      <div class="header-row">
+        <div>
+          <h1>scANN · 单细胞近似最近邻检索</h1>
+          <p class="sub">输入查询细胞编号或向量，设置检索参数，获取 Top-K 相似细胞。</p>
+        </div>
+        <div v-if="currentUser" class="user-badge">
+          <span class="user-name">{{ currentUser.username }}</span>
+          <span class="user-role" :class="currentUser.role">{{ currentUser.role }}</span>
+          <button class="btn-logout" @click="doLogout">退出</button>
+        </div>
+      </div>
     </header>
+
+    <!-- 登录 / 注册面板 -->
+    <section v-if="!currentUser" class="auth-panel">
+      <div class="auth-tabs">
+        <button :class="{ active: authMode === 'login' }" @click="authMode = 'login'; authError = ''">登录</button>
+        <button :class="{ active: authMode === 'register' }" @click="authMode = 'register'; authError = ''">注册</button>
+      </div>
+      <div class="auth-form">
+        <div class="field">
+          <label>用户名</label>
+          <input v-model="authForm.username" placeholder="请输入用户名" @keyup.enter="authMode === 'login' ? doLogin() : doRegister()" />
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" v-model="authForm.password" placeholder="请输入密码" @keyup.enter="authMode === 'login' ? doLogin() : doRegister()" />
+        </div>
+        <button class="btn-auth" :disabled="authLoading" @click="authMode === 'login' ? doLogin() : doRegister()">
+          {{ authLoading ? '处理中…' : (authMode === 'login' ? '登录' : '注册') }}
+        </button>
+      </div>
+      <p class="auth-msg" :class="{ 'auth-ok': authError.startsWith('注册成功') }">{{ authError }}</p>
+    </section>
+
+    <!-- 管理员用户管理 -->
+    <section v-if="currentUser?.role === 'admin'" class="user-mgmt">
+      <div class="section-heading">
+        <h2>用户管理</h2>
+        <button class="btn-refresh" @click="loadUsers" :disabled="userListLoading">{{ userListLoading ? '加载中…' : '刷新' }}</button>
+      </div>
+      <p class="error" v-if="userListError">⚠ {{ userListError }}</p>
+      <table v-if="userList.length" class="user-table">
+        <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="u in userList" :key="u.id">
+            <td>{{ u.id }}</td>
+            <td>{{ u.username }}</td>
+            <td><span class="user-role" :class="u.role">{{ u.role }}</span></td>
+            <td>{{ u.created_at.replace('T', ' ').slice(0, 19) }}</td>
+            <td>
+              <button class="btn-del" :disabled="u.username === currentUser.username" @click="removeUser(u.id)">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else-if="!userListLoading" class="empty-state">暂无用户数据。</p>
+    </section>
 
     <section class="dataset-card" v-if="status">
       <div class="section-heading">
@@ -634,6 +794,42 @@ th { background: #f9fafb; color: #6b7280; font-weight: 600; }
   background: linear-gradient(90deg, #a78bfa, #7c3aed); transition: width .4s ease; }
 .eval-bar-value { font-size: 13px; color: #4b5563; text-align: right;
   font-variant-numeric: tabular-nums; }
+/* auth */
+.header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.user-badge { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 4px; }
+.user-name { font-size: 14px; color: #111827; font-weight: 600; }
+.user-role { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 99px; }
+.user-role.admin { background: #fef3c7; color: #b45309; }
+.user-role.user { background: #dbeafe; color: #1d4ed8; }
+.btn-logout { padding: 5px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
+  font-size: 13px; color: #6b7280; cursor: pointer; }
+.btn-logout:hover { background: #f9fafb; }
+.auth-panel { background: #fff; padding: 20px; border-radius: 10px; margin-top: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); max-width: 400px; }
+.auth-tabs { display: flex; gap: 0; margin-bottom: 16px; }
+.auth-tabs button { flex: 1; padding: 8px 0; border: 1px solid #d1d5db; background: #fff;
+  font-size: 14px; color: #6b7280; cursor: pointer; }
+.auth-tabs button:first-child { border-radius: 7px 0 0 7px; }
+.auth-tabs button:last-child { border-radius: 0 7px 7px 0; border-left: none; }
+.auth-tabs button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.btn-auth { padding: 9px; border: none; border-radius: 8px; background: #2563eb; color: #fff;
+  font-size: 14px; cursor: pointer; margin-top: 4px; }
+.btn-auth:disabled { opacity: .6; cursor: not-allowed; }
+.auth-msg { margin: 10px 0 0; font-size: 13px; color: #dc2626; min-height: 18px; }
+.auth-msg.auth-ok { color: #0f766e; }
+.user-mgmt { background: #fff; padding: 16px; border-radius: 8px; margin-top: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.btn-refresh { padding: 5px 14px; border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb;
+  font-size: 13px; color: #374151; cursor: pointer; }
+.user-table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px;
+  overflow: hidden; margin-top: 12px; }
+.user-table th, .user-table td { padding: 9px 12px; text-align: left; font-size: 14px;
+  border-bottom: 1px solid #f0f1f3; }
+.user-table th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+.btn-del { padding: 4px 10px; border: 1px solid #fca5a5; border-radius: 5px; background: #fff5f5;
+  color: #dc2626; font-size: 12px; cursor: pointer; }
+.btn-del:disabled { opacity: .4; cursor: not-allowed; }
 @media (max-width: 760px) {
   .dataset-grid { grid-template-columns: 1fr; }
   .comparison-row { grid-template-columns: 1fr 1fr; }
@@ -642,5 +838,6 @@ th { background: #f9fafb; color: #6b7280; font-weight: 600; }
   .distance-card { grid-row: auto; }
   .summary-stats { grid-template-columns: 1fr; }
   .eval-results { grid-template-columns: 1fr; }
+  .header-row { flex-direction: column; gap: 8px; }
 }
 </style>

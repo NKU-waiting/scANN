@@ -19,10 +19,15 @@ def create_app(config: type[Config] = Config) -> Flask:
 
     db.init_app(app)
 
-    # 导入模型使 SQLAlchemy 感知表结构，再建表
+    # 导入模型使 SQLAlchemy 感知表结构，再建表；播种默认 admin
     with app.app_context():
         from app.models import User  # noqa: F401
         db.create_all()
+        if not User.query.filter_by(role="admin").first():
+            admin = User(username="admin", role="admin")
+            admin.set_password("admin123")
+            db.session.add(admin)
+            db.session.commit()
 
     register_blueprints(app)
 
