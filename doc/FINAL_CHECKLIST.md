@@ -35,7 +35,7 @@
 | --- | --- | --- | --- |
 | [x] | A1 评测服务:抽样 `n_queries` 个细胞作查询,`flat` 结果作 ground truth,计算目标索引 `recall@k` | `backend/app/services/eval.py`(新增),复用 `search_service`、`create_index`、`FlatIndex` | 单测传入 demo 数据,`flat` 自比召回率为 `1.0` |
 | [x] | A2 `POST /api/eval`:入参 `index_types[]`、`top_k`、`n_queries`、`metric`;返回每个索引的 `recall@k`、平均 `query_ms`、`build_ms` | `backend/app/api/eval.py`(改写,去掉 501) | POST 返回各索引对比数组;非法 `index_type` 返回 400 |
-| [ ] | A3 前端评测面板:一键触发评测,表格展示多索引 `recall@k / 平均查询耗时 / 构建耗时` 对比,附简单柱状图 | `frontend/src/App.vue`、`frontend/src/style.css` | 页面点击「性能评测」后出现对比表,数值与后端一致 |
+| [x] | A3 前端评测面板:一键触发评测,表格展示多索引 `recall@k / 平均查询耗时 / 构建耗时` 对比,附简单柱状图 | `frontend/src/App.vue`、`frontend/src/style.css` | 页面点击「性能评测」后出现对比表,数值与后端一致 |
 | [ ] | A4 评测 API 轻量测试 | `backend/tests/test_eval_api.py`(新增) | 覆盖:评测成功返回结构、非法索引类型报错 |
 
 ### 模块 B · 用户注册 / 登录 / 管理员 + SQLite(P0 主体,P1 前端与管理员)

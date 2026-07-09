@@ -20,6 +20,16 @@ const building = ref(false)
 const comparing = ref(false)
 const error = ref('')
 
+const evalForm = ref({
+  index_types: ['flat', 'hnsw'],
+  top_k: 10,
+  n_queries: 100,
+  metric: 'l2',
+})
+const evalResults = ref([])
+const evalLoading = ref(false)
+const evalError = ref('')
+
 const indexLabels = {
   flat: 'Flat',
   faiss: 'FAISS-Flat',
@@ -226,6 +236,31 @@ async function compareIndexes() {
   }
 }
 
+async function runEval() {
+  evalLoading.value = true
+  evalError.value = ''
+  evalResults.value = []
+  try {
+    const r = await fetch('/api/eval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        index_types: evalForm.value.index_types,
+        top_k: Number(evalForm.value.top_k),
+        n_queries: Number(evalForm.value.n_queries),
+        metric: evalForm.value.metric,
+      }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || '评测失败')
+    evalResults.value = data.results
+  } catch (e) {
+    evalError.value = e.message
+  } finally {
+    evalLoading.value = false
+  }
+}
+
 onMounted(fetchStatus)
 </script>
 
@@ -335,6 +370,74 @@ onMounted(fetchStatus)
           <span>{{ item.ok ? item.returned : '-' }}</span>
           <span>{{ item.ok ? item.first_cell : item.error }}</span>
           <span>{{ item.ok && item.first_distance !== null ? formatNumber(item.first_distance) : '-' }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="eval-panel">
+      <div class="section-heading">
+        <h2>性能评测</h2>
+        <span>Recall@K · 查询耗时 · 构建耗时</span>
+      </div>
+      <div class="eval-form">
+        <div class="eval-checkboxes">
+          <label v-for="type in ['flat','faiss','ivf','hnsw','pq']" :key="type">
+            <input type="checkbox" :value="type" v-model="evalForm.index_types" />
+            {{ indexLabel(type) }}
+          </label>
+        </div>
+        <div class="eval-fields">
+          <div class="field">
+            <label>Top-K</label>
+            <input type="number" v-model="evalForm.top_k" min="1" max="50" />
+          </div>
+          <div class="field">
+            <label>查询样本数</label>
+            <input type="number" v-model="evalForm.n_queries" min="1" max="500" />
+          </div>
+          <div class="field">
+            <label>距离度量</label>
+            <select v-model="evalForm.metric">
+              <option value="l2">L2（欧氏）</option>
+              <option value="ip">IP（内积）</option>
+            </select>
+          </div>
+          <button class="btn-eval" :disabled="evalLoading || evalForm.index_types.length === 0" @click="runEval">
+            {{ evalLoading ? '评测中…' : '性能评测' }}
+          </button>
+        </div>
+      </div>
+      <p class="error" v-if="evalError">⚠ {{ evalError }}</p>
+      <div class="eval-results" v-if="evalResults.length">
+        <table class="eval-table">
+          <thead>
+            <tr>
+              <th>索引</th>
+              <th>Recall@{{ evalResults[0]?.top_k }}</th>
+              <th>平均查询耗时</th>
+              <th>构建耗时</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in evalResults" :key="row.index_type">
+              <td><b>{{ indexLabel(row.index_type) }}</b></td>
+              <td class="recall-cell">{{ (row.recall_at_k * 100).toFixed(1) }}%</td>
+              <td>{{ row.avg_query_ms }} ms</td>
+              <td>{{ row.build_ms }} ms</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="eval-chart">
+          <div class="eval-chart-heading">Recall@{{ evalResults[0]?.top_k }} 对比</div>
+          <div class="eval-bar-list">
+            <div class="eval-bar-item" v-for="row in evalResults" :key="`bar-${row.index_type}`">
+              <span class="eval-bar-label">{{ indexLabel(row.index_type) }}</span>
+              <div class="eval-bar-track">
+                <span :style="{ width: `${row.recall_at_k * 100}%` }"></span>
+              </div>
+              <span class="eval-bar-value">{{ (row.recall_at_k * 100).toFixed(1) }}%</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -504,6 +607,33 @@ table { width: 100%; border-collapse: collapse; background: #fff; border-radius:
   overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
 th, td { padding: 9px 12px; text-align: left; font-size: 14px; border-bottom: 1px solid #f0f1f3; }
 th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+.eval-panel { background: #fff; padding: 16px; border-radius: 8px; margin-top: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.eval-form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.eval-checkboxes { display: flex; gap: 16px; flex-wrap: wrap; }
+.eval-checkboxes label { display: flex; align-items: center; gap: 6px; font-size: 14px;
+  color: #374151; cursor: pointer; user-select: none; }
+.eval-fields { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.btn-eval { padding: 9px 22px; border: none; border-radius: 8px; background: #7c3aed; color: #fff;
+  font-size: 14px; cursor: pointer; }
+.eval-results { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.eval-table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px;
+  overflow: hidden; }
+.eval-table th, .eval-table td { padding: 9px 12px; text-align: left; font-size: 14px;
+  border-bottom: 1px solid #f0f1f3; }
+.eval-table th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+.recall-cell { color: #0f766e; font-weight: 700; }
+.eval-chart { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
+.eval-chart-heading { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 14px; }
+.eval-bar-list { display: flex; flex-direction: column; gap: 12px; }
+.eval-bar-item { display: grid; grid-template-columns: 90px 1fr 46px; align-items: center; gap: 10px; }
+.eval-bar-label { font-size: 13px; color: #374151; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.eval-bar-track { height: 10px; overflow: hidden; border-radius: 999px; background: #e5e7eb; }
+.eval-bar-track span { display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, #a78bfa, #7c3aed); transition: width .4s ease; }
+.eval-bar-value { font-size: 13px; color: #4b5563; text-align: right;
+  font-variant-numeric: tabular-nums; }
 @media (max-width: 760px) {
   .dataset-grid { grid-template-columns: 1fr; }
   .comparison-row { grid-template-columns: 1fr 1fr; }
@@ -511,5 +641,6 @@ th { background: #f9fafb; color: #6b7280; font-weight: 600; }
   .visual-grid { grid-template-columns: 1fr; }
   .distance-card { grid-row: auto; }
   .summary-stats { grid-template-columns: 1fr; }
+  .eval-results { grid-template-columns: 1fr; }
 }
 </style>
