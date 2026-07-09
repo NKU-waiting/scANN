@@ -1,4 +1,4 @@
-"""数据模型（预留）。
+"""数据模型包。"""
+from .user import User
 
-后续接入用户表 / 数据集元数据表（如 SQLAlchemy）。
-"""
+__all__ = ["User"]

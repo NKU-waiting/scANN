@@ -23,6 +23,13 @@ class Config:
     DEMO_N_CELLS = int(os.environ.get("SCANN_DEMO_N_CELLS", 2000))
     DEMO_DIM = int(os.environ.get("SCANN_DEMO_DIM", 50))
 
+    # SQLite 数据库
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "SCANN_DB_URI",
+        f"sqlite:///{BASE_DIR / 'scann.db'}"
+    )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
     # 默认检索参数
     DEFAULT_INDEX_TYPE = os.environ.get("SCANN_DEFAULT_INDEX", "flat")  # flat | faiss
     DEFAULT_METRIC = os.environ.get("SCANN_DEFAULT_METRIC", "l2")       # l2 | ip

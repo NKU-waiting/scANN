@@ -6,6 +6,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from app.core.config import Config
+from app.core.extensions import db
 from app.api import register_blueprints
 
 
@@ -15,6 +16,13 @@ def create_app(config: type[Config] = Config) -> Flask:
 
     # 前后端分离，允许前端开发服务器跨域访问 /api/*
     CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+    db.init_app(app)
+
+    # 导入模型使 SQLAlchemy 感知表结构，再建表
+    with app.app_context():
+        from app.models import User  # noqa: F401
+        db.create_all()
 
     register_blueprints(app)
 
