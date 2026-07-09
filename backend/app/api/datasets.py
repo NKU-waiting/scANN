@@ -4,6 +4,8 @@ GET  /api/datasets            列出可用数据集
 POST /api/datasets/load       加载数据集（demo 或 data 目录下的 .h5ad 文件）
 DELETE /api/datasets/<name>   删除数据集 —— 预留（结项要求：动态数据集管理）
 """
+from __future__ import annotations
+
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
