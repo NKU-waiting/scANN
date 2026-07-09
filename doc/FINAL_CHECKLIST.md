@@ -44,8 +44,8 @@
 | --- | --- | --- | --- |
 | [x] | B1 引入 SQLAlchemy:加依赖、加 `SQLALCHEMY_DATABASE_URI`、在应用工厂初始化 `db` 并建表 | `backend/requirements.txt`、`backend/app/core/config.py`、`backend/app/core/extensions.py`(新增)、`backend/app/__init__.py` | 后端启动后自动生成 `.db` 文件,无报错 |
 | [x] | B2 `User` 模型:`id/username/password_hash/role/created_at`,含密码哈希与校验方法 | `backend/app/models/user.py`(新增)、`backend/app/models/__init__.py` | 可创建用户,`role` 支持 `admin`/`user` |
-| [ ] | B3 `register` / `login`:参数校验、用户名唯一、密码哈希、登录签发 JWT | `backend/app/api/auth.py`(改写,去掉 501) | 注册后可登录并拿到 token;重复用户名 / 错误密码返回 400 |
-| [ ] | B4 JWT 鉴权装饰器 + 管理员用户管理(用户列表、删除用户,仅 admin 可用) | `backend/app/core/security.py`(新增)、`backend/app/api/auth.py` | 无 / 非法 token 返回 401;非 admin 访问管理接口返回 403 |
+| [x] | B3 `register` / `login`:参数校验、用户名唯一、密码哈希、登录签发 JWT | `backend/app/api/auth.py`(改写,去掉 501) | 注册后可登录并拿到 token;重复用户名 / 错误密码返回 400 |
+| [x] | B4 JWT 鉴权装饰器 + 管理员用户管理(用户列表、删除用户,仅 admin 可用) | `backend/app/core/security.py`(新增)、`backend/app/api/auth.py` | 无 / 非法 token 返回 401;非 admin 访问管理接口返回 403 |
 | [ ] | B5 首次启动播种默认 admin 账号(用户名/密码写入 README) | `backend/app/__init__.py` 或启动脚本 | 全新库启动后用默认 admin 能登录 |
 | [ ] | B6 前端:登录 / 注册表单,token 存 `localStorage`,请求统一带 `Authorization`;管理员可见用户管理视图 | `frontend/src/App.vue`、`frontend/src/style.css` | 登录后展示当前用户;admin 登录可看到并删除用户 |
 | [ ] | B7 用户 API 轻量测试 | `backend/tests/test_auth_api.py`(新增) | 覆盖:注册、登录、鉴权失败、admin 权限校验 |
