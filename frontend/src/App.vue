@@ -425,6 +425,13 @@ async function search() {
   }
 }
 
+async function searchFromPlot(cellId) {
+  if (busy.value || !Number.isInteger(cellId)) return
+  queryMode.value = 'cell'
+  form.value.cell_id = cellId
+  await search()
+}
+
 async function buildIndex() {
   const snapshot = captureWorkspace()
   building.value = true
@@ -888,6 +895,7 @@ onMounted(async () => {
         :result="result"
         :query-cell-id="queryCellForPlot"
         :max-points="maxVisualizationPoints"
+        @select-cell="searchFromPlot"
       />
       <div v-if="resultRows.length" class="visual-grid">
         <article class="visual-card summary-card">

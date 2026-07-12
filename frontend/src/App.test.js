@@ -165,6 +165,47 @@ describe('App authentication gate', () => {
     expect(wrapper.text()).toContain('请求 K=10')
   })
 
+  it('runs a cell-id search selected from the embedding plot', async () => {
+    mocks.apiRequest.mockImplementation(async (path, options) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'alice', role: 'user' } }
+      if (path === '/api/index/status') {
+        return {
+          dataset: 'demo', n_cells: 100, dim: 8, ready: true, index_type: 'flat', metric: 'l2',
+          metadata_fields: [],
+          limits: { max_top_k: 1000, max_eval_queries: 1000, max_visualization_points: 500 },
+        }
+      }
+      if (path === '/api/search') {
+        const payload = JSON.parse(options.body)
+        return {
+          query_id: payload.cell_id + 1,
+          query_cell_id: payload.cell_id,
+          dataset_fingerprint: 'demo-fingerprint',
+          index: 'flat(l2)',
+          metric: 'l2',
+          query_ms: 0.1,
+          returned: 1,
+          results: [{ cell_id: payload.cell_id + 1, cell_name: 'neighbor', distance: 1 }],
+        }
+      }
+      throw new Error(`unexpected path: ${path}`)
+    })
+    localStorage.setItem('scann_token', 'valid-token')
+    localStorage.setItem('scann_user', JSON.stringify({ id: 1, username: 'alice', role: 'user' }))
+    const wrapper = shallowMount(App)
+    await flushPromises()
+
+    await wrapper.get('.btn-primary').trigger('click')
+    await flushPromises()
+    wrapper.findComponent({ name: 'EmbeddingPlot' }).vm.$emit('select-cell', 7)
+    await flushPromises()
+
+    const searchCalls = mocks.apiRequest.mock.calls.filter(([path]) => path === '/api/search')
+    expect(searchCalls).toHaveLength(2)
+    expect(JSON.parse(searchCalls[1][1].body).cell_id).toBe(7)
+    expect(wrapper.findAll('.mode-switch button')[0].attributes('aria-pressed')).toBe('true')
+  })
+
   it('does not write an initial-session status failure into a new login', async () => {
     let rejectInitialStatus
     const initialStatus = new Promise((resolve, reject) => {

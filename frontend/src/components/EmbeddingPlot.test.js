@@ -41,4 +41,28 @@ describe('EmbeddingPlot', () => {
     expect(mocks.apiRequest.mock.calls[0][0]).toContain('include_ids=0%2C1')
     expect(mocks.apiRequest.mock.calls[0][0]).toContain('max_points=500')
   })
+
+  it('emits a cell query for pointer and keyboard activation', async () => {
+    const wrapper = mount(EmbeddingPlot, {
+      props: {
+        queryCellId: 0,
+        result: {
+          query_id: 9,
+          dataset_fingerprint: 'fingerprint',
+          results: [{ cell_id: 1 }],
+        },
+      },
+    })
+    await flushPromises()
+
+    const contextPoint = wrapper.findAll('circle')[2]
+    expect(contextPoint.attributes('role')).toBe('button')
+    expect(contextPoint.attributes('tabindex')).toBe('0')
+    expect(contextPoint.attributes('aria-label')).toContain('编号 2')
+
+    await contextPoint.trigger('click')
+    await contextPoint.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('select-cell')).toEqual([[2], [2]])
+  })
 })

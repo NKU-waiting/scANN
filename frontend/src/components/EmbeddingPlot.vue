@@ -7,6 +7,7 @@ const props = defineProps({
   queryCellId: { type: Number, default: null },
   maxPoints: { type: Number, default: 1200 },
 })
+const emit = defineEmits(['select-cell'])
 
 const projection = ref(null)
 const method = ref('umap')
@@ -54,6 +55,10 @@ function pointRadius(point) {
   return 2.6
 }
 
+function selectPoint(point) {
+  if (Number.isInteger(point.cell_id)) emit('select-cell', point.cell_id)
+}
+
 async function loadProjection() {
   if (!props.result?.results) return
   loading.value = true
@@ -87,7 +92,7 @@ watch(
     <div class="embedding-heading">
       <div>
         <h2 id="embedding-title">二维邻域分布</h2>
-        <p>高亮查询细胞与 Top-K 结果；背景点按细胞类型着色。</p>
+        <p>高亮查询细胞与 Top-K 结果；点击或按 Enter/空格可直接查询任意点。</p>
       </div>
       <label>
         <span class="sr-only">投影方法</span>
@@ -113,6 +118,12 @@ watch(
           :fill-opacity="point.role === 'context' ? 0.58 : 0.95"
           :stroke="point.role === 'context' ? 'none' : '#fff'"
           :stroke-width="point.role === 'context' ? 0 : 1.5"
+          role="button"
+          tabindex="0"
+          :aria-label="`查询细胞 ${point.cell_name}，编号 ${point.cell_id}`"
+          @click="selectPoint(point)"
+          @keydown.enter.prevent="selectPoint(point)"
+          @keydown.space.prevent="selectPoint(point)"
         >
           <title>{{ point.cell_name }} · {{ point.cell_type || '未标注' }} · {{ point.role }}</title>
         </circle>
@@ -134,6 +145,8 @@ h2 { margin: 0; font-size: 16px; } p { margin: 4px 0 0; color: #64748b; font-siz
 select { padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
 .state { padding: 28px 0; text-align: center; }.error { color: #b91c1c; }
 .plot-wrap { margin-top: 12px; } svg { display: block; width: 100%; max-height: 440px; }
+circle[role='button'] { cursor: pointer; outline: none; }
+circle[role='button']:focus { stroke: #111827; stroke-width: 2.5; }
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 10px; color: #475569; font-size: 12px; }
 .legend span { display: inline-flex; gap: 5px; align-items: center; }.legend small { margin-left: auto; color: #94a3b8; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; }.legend .query { background: #dc2626; }.legend .neighbor { background: #2563eb; }.legend .context { background: #94a3b8; }
