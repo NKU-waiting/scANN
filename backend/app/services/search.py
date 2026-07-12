@@ -20,6 +20,7 @@ class SearchService:
         self.index = None
         self.index_type: str = Config.DEFAULT_INDEX_TYPE
         self.metric: str = Config.DEFAULT_METRIC
+        self.index_record_id: int | None = None
         self._lock = threading.RLock()
 
     # ---- initialization / datasets ----
@@ -55,17 +56,30 @@ class SearchService:
             self.index = candidate
             self.index_type = candidate_type
             self.metric = candidate_metric
+            self.index_record_id = None
             return {**self._status_unlocked(), "build_ms": round(build_ms, 2)}
 
     def snapshot(self) -> tuple:
         """Capture references needed to roll back a cross-resource transaction."""
         with self._lock:
-            return self.dataset, self.index, self.index_type, self.metric
+            return (
+                self.dataset,
+                self.index,
+                self.index_type,
+                self.metric,
+                self.index_record_id,
+            )
 
     def restore(self, snapshot: tuple) -> None:
         """Restore a state captured by :meth:`snapshot` without rebuilding it."""
         with self._lock:
-            self.dataset, self.index, self.index_type, self.metric = snapshot
+            (
+                self.dataset,
+                self.index,
+                self.index_type,
+                self.metric,
+                self.index_record_id,
+            ) = snapshot
 
     def reset(self) -> None:
         """Clear process-local state; primarily useful for isolated application tests."""
@@ -74,6 +88,7 @@ class SearchService:
             self.index = None
             self.index_type = Config.DEFAULT_INDEX_TYPE
             self.metric = Config.DEFAULT_METRIC
+            self.index_record_id = None
 
     # ---- indexes ----
     def build_index(self, index_type: str | None = None, metric: str | None = None) -> dict:
@@ -91,6 +106,7 @@ class SearchService:
             self.index = candidate
             self.index_type = candidate_type
             self.metric = candidate_metric
+            self.index_record_id = None
             return {**self._status_unlocked(), "build_ms": round(build_ms, 2)}
 
     def status(self) -> dict:
@@ -106,10 +122,43 @@ class SearchService:
             "dim": self.dataset.dim if self.dataset else 0,
             "index": self.index.name if self.index else None,
             "index_type": self.index_type,
+            "index_record_id": self.index_record_id,
+            "persisted": self.index_record_id is not None,
             "metric": self.metric,
             "metadata_fields": sorted(self.dataset.obs.keys()) if self.dataset else [],
             "ready": self.index is not None,
         }
+
+    def install_index(
+        self,
+        index,
+        index_type: str,
+        metric: str,
+        record_id: int,
+        dataset_fingerprint: str,
+    ) -> dict:
+        """Atomically install a validated persisted index for the active dataset."""
+        with self._lock:
+            self.ensure_dataset()
+            if self.dataset.fingerprint != dataset_fingerprint:
+                raise ValueError("索引与当前数据集不匹配")
+            if index.dim != self.dataset.dim or index.n_items != self.dataset.n_cells:
+                raise ValueError("索引规模或维度与当前数据集不匹配")
+            self.index = index
+            self.index_type = index_type
+            self.metric = metric
+            self.index_record_id = record_id
+            return self._status_unlocked()
+
+    def mark_index_persisted(self, record_id: int) -> dict:
+        with self._lock:
+            self.ensure_ready()
+            self.index_record_id = record_id
+            return self._status_unlocked()
+
+    def locked_state(self):
+        """Expose the active immutable references while holding the service lock."""
+        return _LockedSearchState(self)
 
     # ---- retrieval ----
     def search_by_cell(
@@ -248,3 +297,21 @@ class SearchService:
 
 
 search_service = SearchService()
+
+
+class _LockedSearchState:
+    def __init__(self, service: SearchService):
+        self.service = service
+
+    def __enter__(self):
+        self.service._lock.acquire()
+        self.service.ensure_ready()
+        return (
+            self.service.dataset,
+            self.service.index,
+            self.service.index_type,
+            self.service.metric,
+        )
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.service._lock.release()

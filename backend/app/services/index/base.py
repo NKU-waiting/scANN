@@ -50,6 +50,10 @@ class BaseIndex(abc.ABC):
     def load(self, path: str) -> None:
         """从磁盘加载索引。"""
 
+    def parameters(self) -> dict:
+        """Return serializable algorithm parameters for persistence manifests."""
+        return {}
+
     def _as_2d_f32(self, arr: np.ndarray) -> np.ndarray:
         try:
             arr = np.asarray(arr, dtype=np.float32)

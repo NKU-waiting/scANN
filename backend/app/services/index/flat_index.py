@@ -54,5 +54,10 @@ class FlatIndex(BaseIndex):
         np.save(path, self._vectors)
 
     def load(self, path: str) -> None:
-        self._vectors = np.load(path if path.endswith(".npy") else path + ".npy")
+        source = path if path.endswith(".npy") else path + ".npy"
+        try:
+            vectors = np.load(source, allow_pickle=False)
+        except (OSError, ValueError) as exc:
+            raise ValueError("无法读取 Flat 索引文件") from exc
+        self._vectors = self._prepare(vectors)
         self.n_items = self._vectors.shape[0]

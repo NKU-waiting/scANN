@@ -85,5 +85,28 @@ class FaissIndex(BaseIndex):
 
     def load(self, path: str) -> None:
         import faiss
-        self._index = faiss.read_index(path)
-        self.n_items = self._index.ntotal
+
+        try:
+            index = faiss.read_index(path)
+        except RuntimeError as exc:
+            raise ValueError("无法读取 FAISS 索引文件") from exc
+        if index.d != self.dim:
+            raise ValueError(f"索引维度应为 {self.dim}，实际为 {index.d}")
+        if index.metric_type != self._metric_flag():
+            raise ValueError("索引距离度量与清单不一致")
+        self._index = index
+        self.n_items = index.ntotal
+
+    def parameters(self) -> dict:
+        if self._index is None:
+            return {}
+        if self.variant == "ivf":
+            return {"nlist": int(self._index.nlist), "nprobe": int(self._index.nprobe)}
+        if self.variant == "hnsw":
+            return {
+                "ef_construction": int(self._index.hnsw.efConstruction),
+                "ef_search": int(self._index.hnsw.efSearch),
+            }
+        if self.variant == "pq":
+            return {"m": int(self._index.pq.M), "nbits": int(self._index.pq.nbits)}
+        return {}

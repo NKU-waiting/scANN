@@ -162,16 +162,21 @@ class DatasetService:
         if not source.is_file():
             raise ValueError("数据集文件不存在，拒绝执行不完整删除")
         tombstone = source.with_name(f".{source.name}.{uuid.uuid4().hex}.deleting")
-        source.replace(tombstone)
+        from app.services.indexes import index_artifact_service
+
+        cleanup = index_artifact_service.prepare_dataset_cleanup(record.id)
         try:
+            source.replace(tombstone)
             name = record.name
             db.session.delete(record)
             db.session.commit()
         except Exception:
             db.session.rollback()
+            cleanup.restore()
             if tombstone.exists() and not source.exists():
                 tombstone.replace(source)
             raise
+        cleanup.finalize()
         tombstone.unlink(missing_ok=True)
         return {"message": "数据集已删除", "id": dataset_id, "name": name}
 

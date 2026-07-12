@@ -42,6 +42,9 @@ def _login(client, username="admin", password="admin123") -> str:
     [
         ("get", "/api/index/status", None),
         ("post", "/api/index/build", {"index_type": "flat"}),
+        ("get", "/api/index/artifacts", None),
+        ("post", "/api/index/save", {}),
+        ("post", "/api/index/load", {"index_id": 1}),
         ("get", "/api/datasets", None),
         ("post", "/api/datasets/load", {}),
         ("post", "/api/search", {"cell_id": 0}),
