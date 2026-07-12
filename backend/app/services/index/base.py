@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import abc
+import hashlib
 
 import numpy as np
 
@@ -54,6 +55,17 @@ class BaseIndex(abc.ABC):
     def parameters(self) -> dict:
         """Return serializable algorithm parameters for persistence manifests."""
         return {}
+
+    def size_bytes(self) -> int:
+        """Return a stable serialized-size proxy for index memory comparisons."""
+        return 0
+
+    def fingerprint(self) -> str:
+        """Return a SHA-256 digest of the serialized index representation."""
+        return hashlib.sha256(b"").hexdigest()
+
+    def attach_vectors(self, vectors: np.ndarray) -> None:
+        """Attach validated source vectors when an algorithm needs exact refinement."""
 
     def _as_2d_f32(self, arr: np.ndarray) -> np.ndarray:
         try:

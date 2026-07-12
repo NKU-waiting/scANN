@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from app.core.config import Config
 from app.core.security import require_auth
-from app.services.eval import evaluate_index
+from app.services.eval import evaluate_index, pq_rerank_comparison
 from app.services.history import history_service
 from app.services.index import VALID_INDEX_TYPES, VALID_METRICS
 from app.services.search import search_service
@@ -31,6 +31,8 @@ def evaluate():
         if any(not isinstance(item, str) for item in index_types):
             raise ValueError("index_types 中的值必须是字符串")
         index_types = [item.strip().lower() for item in index_types]
+        if len(set(index_types)) != len(index_types):
+            raise ValueError("index_types 不能重复")
         invalid = [item for item in index_types if item not in VALID_INDEX_TYPES]
         if invalid:
             raise ValueError(f"不支持的索引类型: {invalid}")
@@ -61,6 +63,7 @@ def evaluate():
                 metric=metric,
             )
             results.append(result)
+        ann_improvement = pq_rerank_comparison(results)
         log = history_service.record_evaluation(
             user_id=g.current_user.id,
             dataset=dataset,
@@ -81,6 +84,7 @@ def evaluate():
         n_queries=results[0]["n_queries"],
         metric=metric,
         evaluation_id=log.id,
+        ann_improvement=ann_improvement,
     )
 
 

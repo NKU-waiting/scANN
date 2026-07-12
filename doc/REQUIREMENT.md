@@ -41,7 +41,7 @@
 5. 支持 top-k 结果展示；
 6. 支持查询耗时、索引状态和基础评测指标展示。
 
-当前版本支持 NumPy Flat 基线以及 FAISS Flat、IVF、HNSW 和 PQ 五类索引名称。其中 Flat 用作精确检索基线，IVF、HNSW 和 PQ 用于近似检索对比。查询度量支持 L2、Cosine 和 Inner Product（IP）。
+当前版本支持 NumPy Flat 基线以及 FAISS Flat、IVF、HNSW、PQ 和 PQ 候选精确重排。其中 Flat 用作精确检索基线，IVF、HNSW 和 PQ 用于近似检索对比，PQ 精确重排用于可证明的召回改进。查询度量支持 L2、Cosine 和 Inner Product（IP）。
 
 #### 课程作业目标
 
@@ -123,7 +123,7 @@
 
 该流程主要解决如何为向量数据建立可复用的索引。输入是向量数据集、索引类型和参数设置，输出是可用索引及其状态信息。
 
-当前版本支持 NumPy Flat 与 FAISS Flat、IVF、HNSW、PQ。系统支持索引构建、保存、加载、切换和状态查看，持久化索引同时绑定数据集记录和语义指纹。
+当前版本支持 NumPy Flat 与 FAISS Flat、IVF、HNSW、PQ、PQ 精确重排。系统支持索引构建、保存、加载、切换和状态查看，持久化索引同时绑定数据集记录和语义指纹。
 
 如果当前数据集已经存在可用索引，系统允许直接加载；如果索引不存在或失效，则重新构建。该流程的关键异常点主要是参数不合法、索引文件缺失或索引构建失败。
 
@@ -290,7 +290,7 @@
 | --- | --- | --- | --- |
 | id / name | 索引编号与名称 | Int / String | 按数据集指纹约束名称 |
 | dataset_id / dataset_fingerprint | 数据集绑定 | Int / String | 加载时两者均必须匹配 |
-| index_type / metric | 索引与度量 | String | flat/faiss/ivf/hnsw/pq 与 l2/cosine/ip |
+| index_type / metric | 索引与度量 | String | flat/faiss/ivf/hnsw/pq/pq_rerank 与 l2/cosine/ip |
 | dim / n_items / parameters | 规模与参数 | Int / JSON | 维度、条目数和索引参数快照 |
 | stored_path / manifest_path | 文件路径 | String | 索引根目录内的相对路径 |
 | artifact_fingerprint / library_version | 校验信息 | String | 文件 SHA-256 和构建库版本 |
@@ -341,7 +341,7 @@
 | dataset_id / dataset_fingerprint | 数据集快照 | Int / String | 评测数据集身份 |
 | top_k / n_queries / metric | 评测参数 | Int / String | 请求 K、实际查询数和度量 |
 | index_types | 索引集合 | JSON | 本次对比的索引类型 |
-| results | 评测快照 | JSON | 每个索引的 effective K、Recall、平均查询与构建耗时 |
+| results | 评测快照 | JSON | 每个索引的 effective K、Recall、查询/构建耗时、参数与索引字节 |
 | created_at | 评测时间 | Datetime | 记录建立时间 |
 
 ## 功能需求
@@ -386,7 +386,7 @@
 
 #### 索引构建与管理模块
 
-当前版本实现 NumPy Flat 和 FAISS Flat、IVF、HNSW、PQ。Flat 用于精确检索，其余变体用于精确/近似方案对比。系统支持索引构建、保存、加载、切换和状态查看。
+当前版本实现 NumPy Flat 和 FAISS Flat、IVF、HNSW、PQ、PQ 精确重排。Flat 用于精确检索，其余变体用于精确/近似方案对比和候选重排改进。系统支持索引构建、保存、加载、切换和状态查看。
 
 模块输入主要是向量数据集、索引类型和索引参数；主要处理是判断索引是否存在、执行构建或加载并记录状态；主要输出是可用索引及其元信息。该模块是 ANN 系统区别于普通数据查询系统的重要部分。
 

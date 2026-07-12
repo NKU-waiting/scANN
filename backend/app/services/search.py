@@ -126,6 +126,7 @@ class SearchService:
             "index_record_id": self.index_record_id,
             "persisted": self.index_record_id is not None,
             "metric": self.metric,
+            "parameters": self.index.parameters() if self.index else {},
             "metadata_fields": sorted(self.dataset.obs.keys()) if self.dataset else [],
             "limits": {
                 "max_top_k": self._config("MAX_TOP_K"),
@@ -154,6 +155,7 @@ class SearchService:
                 raise ValueError("索引与当前数据集不匹配")
             if index.dim != self.dataset.dim or index.n_items != self.dataset.n_cells:
                 raise ValueError("索引规模或维度与当前数据集不匹配")
+            index.attach_vectors(self.dataset.vectors)
             self.index = index
             self.index_type = index_type
             self.metric = metric

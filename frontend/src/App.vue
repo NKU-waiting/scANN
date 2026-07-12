@@ -172,6 +172,7 @@ const error = ref('')
 
 const evalForm = ref(defaultEvalForm())
 const evalResults = ref([])
+const annImprovement = ref(null)
 const evalLoading = ref(false)
 const evalError = ref('')
 const historyRefreshKey = ref(0)
@@ -198,6 +199,7 @@ function resetWorkspaceState() {
   error.value = ''
   evalForm.value = defaultEvalForm()
   evalResults.value = []
+  annImprovement.value = null
   evalLoading.value = false
   evalError.value = ''
   historyRefreshKey.value = 0
@@ -235,6 +237,7 @@ const indexLabels = {
   ivf: 'FAISS-IVF',
   hnsw: 'FAISS-HNSW',
   pq: 'FAISS-PQ',
+  pq_rerank: 'PQ + 精确重排',
 }
 
 const metadataFields = computed(() => status.value?.metadata_fields || [])
@@ -345,6 +348,15 @@ const typeDistribution = computed(() => {
 
 function formatNumber(value) {
   return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
+}
+
+function formatBytes(value) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes)) return '-'
+  const absolute = Math.abs(bytes)
+  if (absolute < 1024) return `${bytes} B`
+  if (absolute < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
 }
 
 function indexLabel(indexType) {
@@ -521,6 +533,7 @@ async function runEval() {
   evalLoading.value = true
   evalError.value = ''
   evalResults.value = []
+  annImprovement.value = null
   try {
     const topK = Number(evalForm.value.top_k)
     const nQueries = Number(evalForm.value.n_queries)
@@ -541,6 +554,7 @@ async function runEval() {
     })
     if (!isWorkspaceCurrent(snapshot)) return
     evalResults.value = data.results
+    annImprovement.value = data.ann_improvement || null
     historyRefreshKey.value += 1
   } catch (e) {
     if (isWorkspaceCurrent(snapshot)) evalError.value = e.message
@@ -562,6 +576,7 @@ async function handleDatasetChanged(nextStatus) {
     comparisonResults.value = []
     comparisonMeta.value = null
     evalResults.value = []
+    annImprovement.value = null
     evalError.value = ''
     error.value = ''
     historyRefreshKey.value += 1
@@ -759,6 +774,7 @@ onMounted(async () => {
           <option value="ivf">FAISS-IVF</option>
           <option value="hnsw">FAISS-HNSW</option>
           <option value="pq">FAISS-PQ</option>
+          <option value="pq_rerank">PQ + 精确候选重排</option>
         </select>
       </div>
       <div class="field">
@@ -780,6 +796,7 @@ onMounted(async () => {
           <option value="ivf">FAISS-IVF</option>
           <option value="faiss">FAISS-Flat</option>
           <option value="pq">FAISS-PQ</option>
+          <option value="pq_rerank">PQ + 精确候选重排</option>
         </select>
       </div>
       <div class="btn-group">
@@ -826,11 +843,11 @@ onMounted(async () => {
     <section class="eval-panel">
       <div class="section-heading">
         <h2>性能评测</h2>
-        <span>Recall@K · 查询耗时 · 构建耗时</span>
+        <span>Recall@K · 查询耗时 · 构建耗时 · 索引字节</span>
       </div>
       <div class="eval-form">
         <div class="eval-checkboxes">
-          <label v-for="type in ['flat','faiss','ivf','hnsw','pq']" :key="type">
+          <label v-for="type in ['flat','faiss','ivf','hnsw','pq','pq_rerank']" :key="type">
             <input type="checkbox" :value="type" v-model="evalForm.index_types" :disabled="busy" />
             {{ indexLabel(type) }}
           </label>
@@ -869,6 +886,7 @@ onMounted(async () => {
               </th>
               <th>平均查询耗时</th>
               <th>构建耗时</th>
+              <th>序列化索引</th>
             </tr>
           </thead>
           <tbody>
@@ -877,9 +895,22 @@ onMounted(async () => {
               <td class="recall-cell">{{ (row.recall_at_k * 100).toFixed(1) }}%</td>
               <td>{{ row.avg_query_ms }} ms</td>
               <td>{{ row.build_ms }} ms</td>
+              <td>{{ formatBytes(row.index_bytes) }}<small v-if="row.bytes_per_vector != null">{{ row.bytes_per_vector }} B/细胞</small></td>
             </tr>
           </tbody>
         </table>
+        <article v-if="annImprovement" class="improvement-summary">
+          <div>
+            <b>PQ 候选精确重排</b>
+            <span>同一查询集 · 候选扩大 {{ evalResults.find(row => row.index_type === 'pq_rerank')?.parameters?.rerank_factor || '-' }}×</span>
+          </div>
+          <dl>
+            <div><dt>Recall 变化</dt><dd>{{ annImprovement.recall_delta >= 0 ? '+' : '' }}{{ (annImprovement.recall_delta * 100).toFixed(1) }} 个百分点</dd></div>
+            <div><dt>查询耗时变化</dt><dd>{{ annImprovement.avg_query_ms_delta >= 0 ? '+' : '' }}{{ annImprovement.avg_query_ms_delta }} ms</dd></div>
+            <div><dt>索引字节变化</dt><dd>{{ annImprovement.index_bytes_delta >= 0 ? '+' : '' }}{{ formatBytes(annImprovement.index_bytes_delta) }}</dd></div>
+          </dl>
+          <p>重排复用已加载的原始数据向量；索引字节不含数据集本体。耗时是精度提升的显式权衡。</p>
+        </article>
         <div class="eval-chart">
           <div class="eval-chart-heading">
             Recall@{{ evalEffectiveTopK }} 对比
@@ -1094,6 +1125,12 @@ th { background: #f9fafb; color: #6b7280; font-weight: 600; }
   border-bottom: 1px solid #f0f1f3; }
 .eval-table th { background: #f9fafb; color: #6b7280; font-weight: 600; }
 .recall-cell { color: #0f766e; font-weight: 700; }
+.eval-table td small { display: block; color: #94a3b8; font-size: 11px; margin-top: 2px; }
+.improvement-summary { grid-column: 1 / -1; grid-row: 1; margin: 0; padding: 14px; border: 1px solid #a7f3d0; border-radius: 9px; background: #f0fdfa; }
+.improvement-summary > div { display: flex; justify-content: space-between; gap: 12px; color: #115e59; }
+.improvement-summary > div span { font-size: 12px; }.improvement-summary dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+.improvement-summary dl div { padding: 8px; border-radius: 7px; background: #fff; }.improvement-summary dt { color: #64748b; font-size: 11px; }
+.improvement-summary dd { margin: 3px 0 0; color: #0f766e; font-weight: 700; }.improvement-summary p { color: #475569; }
 .eval-chart { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
 .eval-chart-heading { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 14px; }
 .eval-bar-list { display: flex; flex-direction: column; gap: 12px; }

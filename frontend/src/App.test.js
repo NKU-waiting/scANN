@@ -165,6 +165,59 @@ describe('App authentication gate', () => {
     expect(wrapper.text()).toContain('请求 K=10')
   })
 
+  it('shows the paired PQ rerank recall, latency, and index-size tradeoff', async () => {
+    mocks.apiRequest.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'alice', role: 'user' } }
+      if (path === '/api/index/status') {
+        return {
+          dataset: 'demo', n_cells: 640, dim: 16, ready: true, index_type: 'flat', metric: 'l2',
+          metadata_fields: [],
+          limits: { max_top_k: 1000, max_eval_queries: 1000, max_visualization_points: 500 },
+        }
+      }
+      if (path === '/api/eval') {
+        return {
+          results: [
+            {
+              index_type: 'pq', top_k: 10, effective_top_k: 10, recall_at_k: 0.6,
+              avg_query_ms: 0.2, build_ms: 1, index_bytes: 400, bytes_per_vector: 0.63,
+              parameters: { m: 8, nbits: 4 },
+            },
+            {
+              index_type: 'pq_rerank', top_k: 10, effective_top_k: 10, recall_at_k: 0.9,
+              avg_query_ms: 0.3, build_ms: 1, index_bytes: 400, bytes_per_vector: 0.63,
+              parameters: { m: 8, nbits: 4, rerank_factor: 4 },
+            },
+          ],
+          ann_improvement: {
+            recall_delta: 0.3,
+            avg_query_ms_delta: 0.1,
+            index_bytes_delta: 0,
+          },
+        }
+      }
+      throw new Error(`unexpected path: ${path}`)
+    })
+    localStorage.setItem('scann_token', 'valid-token')
+    localStorage.setItem('scann_user', JSON.stringify({ id: 1, username: 'alice', role: 'user' }))
+    const wrapper = shallowMount(App)
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('.eval-checkboxes input')
+    await checkboxes[0].setValue(false)
+    await checkboxes[3].setValue(false)
+    await checkboxes[4].setValue(true)
+    await checkboxes[5].setValue(true)
+    await wrapper.get('.btn-eval').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('PQ 候选精确重排')
+    expect(wrapper.text()).toContain('+30.0 个百分点')
+    expect(wrapper.text()).toContain('+0.1 ms')
+    expect(wrapper.text()).toContain('+0 B')
+    expect(wrapper.text()).toContain('0.63 B/细胞')
+  })
+
   it('runs a cell-id search selected from the embedding plot', async () => {
     mocks.apiRequest.mockImplementation(async (path, options) => {
       if (path === '/api/auth/me') return { user: { id: 1, username: 'alice', role: 'user' } }

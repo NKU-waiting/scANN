@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 
 import numpy as np
@@ -36,6 +37,7 @@ def evaluate_index(
     target = create_index(index_type, dataset.dim, metric)
     target.build(dataset.vectors)
     build_ms = (time.perf_counter() - t0) * 1000
+    index_bytes = target.size_bytes()
 
     query_times: list[float] = []
     recalls: list[float] = []
@@ -58,6 +60,41 @@ def evaluate_index(
         "n_queries": actual_queries,
         "avg_query_ms": round(float(np.mean(query_times)), 3),
         "build_ms": round(build_ms, 2),
+        "index_bytes": index_bytes,
+        "index_fingerprint": target.fingerprint(),
+        "bytes_per_vector": round(index_bytes / dataset.n_cells, 2),
+        "parameters": target.parameters(),
+        "query_seed": seed,
+        "query_set_digest": hashlib.sha256(
+            np.asarray(query_ids, dtype=np.dtype("<i8")).tobytes()
+        ).hexdigest(),
+    }
+
+
+def pq_rerank_comparison(results: list[dict]) -> dict | None:
+    """Build an auditable paired summary when PQ and its reranked variant are present."""
+    by_type = {row["index_type"]: row for row in results}
+    baseline = by_type.get("pq")
+    improved = by_type.get("pq_rerank")
+    if baseline is None or improved is None:
+        return None
+    if baseline["query_set_digest"] != improved["query_set_digest"]:
+        raise RuntimeError("PQ 对照未使用相同查询集合")
+    same_pq_index = baseline["index_fingerprint"] == improved["index_fingerprint"]
+    return {
+        "strategy": "pq_candidate_exact_rerank",
+        "baseline_index_type": "pq",
+        "improved_index_type": "pq_rerank",
+        "same_query_set": True,
+        "same_pq_index": same_pq_index,
+        "query_set_digest": baseline["query_set_digest"],
+        "recall_delta": round(improved["recall_at_k"] - baseline["recall_at_k"], 4),
+        "avg_query_ms_delta": round(improved["avg_query_ms"] - baseline["avg_query_ms"], 3),
+        "index_bytes_delta": improved["index_bytes"] - baseline["index_bytes"],
+        "recall_non_decreasing": improved["recall_at_k"] + 1e-9 >= baseline["recall_at_k"],
+        "guarantee": (
+            "exact_rerank_of_superset_candidates" if same_pq_index else "measured_comparison_only"
+        ),
     }
 
 

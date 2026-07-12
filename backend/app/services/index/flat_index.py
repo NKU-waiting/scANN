@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import hashlib
+from io import BytesIO
+
 import numpy as np
 
 from .base import BaseIndex
@@ -62,3 +65,17 @@ class FlatIndex(BaseIndex):
             raise ValueError("无法读取 Flat 索引文件") from exc
         self._vectors = self._prepare(vectors)
         self.n_items = self._vectors.shape[0]
+
+    def size_bytes(self) -> int:
+        if not hasattr(self, "_vectors"):
+            return 0
+        stream = BytesIO()
+        np.save(stream, self._vectors)
+        return stream.tell()
+
+    def fingerprint(self) -> str:
+        if not hasattr(self, "_vectors"):
+            return super().fingerprint()
+        stream = BytesIO()
+        np.save(stream, self._vectors)
+        return hashlib.sha256(stream.getvalue()).hexdigest()

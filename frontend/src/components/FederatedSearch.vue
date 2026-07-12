@@ -176,6 +176,7 @@ onMounted(loadStatus)
           <option value="ivf">FAISS-IVF</option>
           <option value="hnsw">FAISS-HNSW</option>
           <option value="pq">FAISS-PQ</option>
+          <option value="pq_rerank">PQ + 精确候选重排</option>
         </select>
       </label>
       <label>

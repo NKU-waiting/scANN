@@ -119,7 +119,7 @@ def test_flat_index_round_trip_has_verified_relative_manifest(client, app_config
     assert str(Path(app_config.INDEX_DIR)) not in manifest_path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("index_type", ["faiss", "ivf", "hnsw", "pq"])
+@pytest.mark.parametrize("index_type", ["faiss", "ivf", "hnsw", "pq", "pq_rerank"])
 def test_faiss_index_variants_round_trip(client, index_type):
     headers = _headers(client)
     built = client.post(

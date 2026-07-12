@@ -8,10 +8,10 @@ scANN 是一个面向单细胞高维向量的课程级 Web 检索系统。后端
 | --- | --- |
 | 用户与权限 | 注册、登录、JWT、实时用户校验、管理员用户管理、业务 API 登录门禁 |
 | 数据管理 | demo 数据；`.h5ad`、`.npy`、`.csv` 上传；列表、切换、重启恢复、指纹校验、删除 |
-| 索引管理 | NumPy Flat；FAISS Flat、IVF、HNSW、PQ；构建、保存、清单校验、加载、列出、删除 |
+| 索引管理 | NumPy Flat；FAISS Flat、IVF、HNSW、PQ、PQ 候选精确重排；构建、保存、清单校验、加载、列出、删除 |
 | 查询检索 | 细胞编号或向量查询；L2、Cosine、IP；Top-K；`cell_type` 保证型条件检索 |
 | 联合检索 | 多数据集联合建索引；共享空间确认；复合细胞身份；跨数据集来源追踪与条件检索 |
-| 评测分析 | Flat ground truth、Recall@K、平均查询耗时、构建耗时、多索引对比 |
+| 评测分析 | Flat ground truth、Recall@K、平均查询/构建耗时、序列化索引字节、PQ 改进成对对比 |
 | 可视化 | 结果表、距离/得分条形图、类型分布、UMAP/PCA 散点图与查询/近邻高亮 |
 | 运行历史 | 查询与评测记录入库；原始查询向量不落库；用户隔离和管理员全局视图 |
 | 工程质量 | 后端 pytest/Ruff，前端 Vitest/ESLint/生产构建，GitHub Actions 双端质量门 |
@@ -25,9 +25,9 @@ Vue SPA
 Flask API ── SQLAlchemy/SQLite（用户、数据集、索引元信息、历史）
   │
   ├─ 数据加载：AnnData / NumPy / CSV
-  ├─ 检索：NumPy Flat / FAISS Flat、IVF、HNSW、PQ
+  ├─ 检索：NumPy Flat / FAISS Flat、IVF、HNSW、PQ、PQ 精确重排
   ├─ 联合检索：共享向量空间中的多数据集快照 + 来源映射
-  ├─ 评测：Flat ground truth + Recall@K
+  ├─ 评测：Flat ground truth + Recall@K + 查询/构建耗时 + 索引字节
   └─ 可视化：UMAP / PCA 投影
 
 本地文件系统：上传数据、索引文件、校验清单、运行日志
@@ -89,8 +89,9 @@ npm run dev
 4. 按细胞编号或向量执行 Top-K 查询，可填写 `cell_type`。
 5. 保存当前索引；构建其他索引后可重新加载已保存索引。
 6. 上传至少两个同空间数据集后，可填写共享空间标识，构建联合索引并执行跨数据集查询。
-7. 查看 UMAP/PCA、索引对比、性能评测和运行历史。
-8. 管理员可删除非活动数据集、非活动索引和普通用户。
+7. 在性能评测同时选择 PQ 与“PQ + 精确重排”，查看相同查询集上的精度、耗时和索引字节权衡。
+8. 查看 UMAP/PCA、索引对比和运行历史。
+9. 管理员可删除非活动数据集、非活动索引和普通用户。
 
 ## 数据格式
 
@@ -164,6 +165,7 @@ npm run build
 - [完整 API 契约](doc/API.md)
 - [用户手册](doc/USER_GUIDE.md)
 - [测试与验收说明](doc/TESTING.md)
+- [PQ 候选精确重排说明](doc/ANN_IMPROVEMENT.md)
 - [结项交付说明](doc/FINAL_SUBMISSION.md)
 - [结项功能清单](doc/FINAL_CHECKLIST.md)
 

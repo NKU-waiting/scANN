@@ -57,6 +57,11 @@ def test_eval_flat_returns_correct_structure(client):
     assert row["top_k"] == 5
     assert isinstance(row["avg_query_ms"], float)
     assert isinstance(row["build_ms"], float)
+    assert isinstance(row["index_bytes"], int)
+    assert isinstance(row["bytes_per_vector"], float)
+    assert isinstance(row["parameters"], dict)
+    assert len(row["query_set_digest"]) == 64
+    assert len(row["index_fingerprint"]) == 64
 
 
 def test_eval_flat_self_recall_is_1(client):
@@ -76,6 +81,30 @@ def test_eval_multiple_index_types(client):
     )
     assert response.status_code == 200
     assert len(response.get_json()["results"]) == 2
+
+
+def test_eval_returns_paired_pq_rerank_improvement_summary(client):
+    response = client.post(
+        "/api/eval",
+        json={
+            "index_types": ["pq", "pq_rerank"],
+            "top_k": 10,
+            "n_queries": 40,
+            "metric": "l2",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    baseline, improved = body["results"]
+    comparison = body["ann_improvement"]
+    assert baseline["query_set_digest"] == improved["query_set_digest"]
+    assert improved["recall_at_k"] >= baseline["recall_at_k"]
+    assert comparison["strategy"] == "pq_candidate_exact_rerank"
+    assert comparison["same_query_set"] is True
+    assert comparison["same_pq_index"] is True
+    assert comparison["recall_non_decreasing"] is True
+    assert comparison["index_bytes_delta"] == 0
 
 
 def test_eval_rejects_unknown_index_type(client):
@@ -116,6 +145,7 @@ def test_eval_rejects_invalid_metric(client):
     [
         [],
         {"index_types": [1]},
+        {"index_types": ["pq", "pq"]},
         {"index_types": ["flat"], "top_k": 0},
         {"index_types": ["flat"], "top_k": "bad"},
         {"index_types": ["flat"], "n_queries": 0},

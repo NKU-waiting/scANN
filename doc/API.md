@@ -91,7 +91,7 @@ JSON 错误统一包含 `error`；框架级错误还包含 `status`。参数错�
 {"index_type": "hnsw", "metric": "cosine"}
 ```
 
-`index_type` 支持 `flat`、`faiss`、`ivf`、`hnsw`、`pq`；`metric` 支持 `l2`、`cosine`、`ip`。构建在候选对象上完成，成功后才替换当前索引。
+`index_type` 支持 `flat`、`faiss`、`ivf`、`hnsw`、`pq`、`pq_rerank`；`metric` 支持 `l2`、`cosine`、`ip`。`pq_rerank` 先取 4 倍 PQ 候选，再使用已加载原始向量按真实度量重排。构建在候选对象上完成，成功后才替换当前索引。
 
 ### `GET /api/index/artifacts`
 
@@ -194,14 +194,16 @@ JSON 错误统一包含 `error`；框架级错误还包含 `status`。参数错�
 
 ```json
 {
-  "index_types": ["flat", "ivf", "hnsw", "pq"],
+  "index_types": ["flat", "ivf", "hnsw", "pq", "pq_rerank"],
   "top_k": 10,
   "n_queries": 100,
   "metric": "l2"
 }
 ```
 
-Flat 精确结果作为 ground truth。每个索引返回 `recall_at_k`、`avg_query_ms`、`build_ms` 和边界修正后的 `effective_top_k`。当请求 K 超过可用邻居数时，Recall 分母使用真实可用邻居数。成功评测返回 `evaluation_id` 并保存结果快照。
+Flat 精确结果作为 ground truth。每个索引返回 `recall_at_k`、`avg_query_ms`、`build_ms`、`index_bytes`、`bytes_per_vector`、`index_fingerprint`、实际参数、查询种子/摘要和边界修正后的 `effective_top_k`。`index_bytes` 是稳定的序列化索引大小代理，不是进程 RSS。当请求 K 超过可用邻居数时，Recall 分母使用真实可用邻居数。成功评测返回 `evaluation_id` 并保存结果快照。
+
+同一请求同时包含 `pq` 和 `pq_rerank` 时，顶层 `ann_improvement` 校验两行使用相同查询摘要和相同 PQ 序列化指纹，并返回 Recall、平均查询耗时和索引字节差值。只有基础索引指纹一致时才声明候选超集重排保证。重排的理论保证、最坏情况和固定回归基准见 [PQ 改进说明](ANN_IMPROVEMENT.md)。
 
 ## 二维可视化
 

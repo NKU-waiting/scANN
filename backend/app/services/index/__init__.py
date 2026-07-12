@@ -7,7 +7,7 @@
 from .base import VALID_METRICS, BaseIndex
 from .flat_index import FlatIndex
 
-VALID_INDEX_TYPES = frozenset({"flat", "faiss", "ivf", "hnsw", "pq"})
+VALID_INDEX_TYPES = frozenset({"flat", "faiss", "ivf", "hnsw", "pq", "pq_rerank"})
 
 __all__ = [
     "BaseIndex",
@@ -22,7 +22,7 @@ def create_index(index_type: str, dim: int, metric: str = "l2") -> BaseIndex:
     index_type = (index_type or "flat").lower()
     if index_type == "flat":
         return FlatIndex(dim=dim, metric=metric)
-    if index_type in ("faiss", "ivf", "hnsw", "pq"):
+    if index_type in ("faiss", "ivf", "hnsw", "pq", "pq_rerank"):
         # 延迟导入：仅在请求 faiss 时才依赖 faiss 库
         from .faiss_index import FaissIndex
 
