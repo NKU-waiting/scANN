@@ -49,6 +49,9 @@ def _login(client, username="admin", password="admin123") -> str:
         ("post", "/api/datasets/load", {}),
         ("post", "/api/search", {"cell_id": 0}),
         ("post", "/api/eval", {"index_types": ["flat"]}),
+        ("get", "/api/history/queries", None),
+        ("get", "/api/history/evaluations", None),
+        ("get", "/api/visualization/embedding", None),
     ],
 )
 def test_business_routes_require_authentication(client, method, path, payload):

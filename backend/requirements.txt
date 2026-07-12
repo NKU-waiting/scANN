@@ -20,4 +20,5 @@ anndata>=0.12,<0.13
 
 # ANN 核心检索库
 faiss-cpu>=1.8.0
+umap-learn>=0.5.12,<0.6
 # hnswlib>=0.8.0          # 备选轻量索引（按需开启）

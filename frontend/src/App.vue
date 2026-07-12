@@ -1,5 +1,10 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
+import DatasetManager from './components/DatasetManager.vue'
+import EmbeddingPlot from './components/EmbeddingPlot.vue'
+import HistoryPanel from './components/HistoryPanel.vue'
+import IndexManager from './components/IndexManager.vue'
+import { apiRequest, configureApi } from './api'
 
 // ── 认证状态 ──────────────────────────────────────────────
 function readStoredUser() {
@@ -20,36 +25,15 @@ const authForm = ref({ username: '', password: '' })
 const authLoading = ref(false)
 const authError = ref('')
 
+configureApi({
+  getToken: () => token.value,
+  onUnauthorized: () => doLogout(),
+})
+
 // ── 管理员用户管理 ────────────────────────────────────────
 const userList = ref([])
 const userListLoading = ref(false)
 const userListError = ref('')
-
-async function apiRequest(path, options = {}, authenticated = true) {
-  const headers = { ...(options.headers || {}) }
-  if (authenticated && token.value) headers.Authorization = `Bearer ${token.value}`
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
-
-  let response
-  try {
-    response = await fetch(path, { ...options, headers })
-  } catch {
-    throw new Error('无法连接后端服务，请确认服务已启动')
-  }
-
-  const text = await response.text()
-  let data = null
-  if (text) {
-    try {
-      data = JSON.parse(text)
-    } catch {
-      data = { error: text }
-    }
-  }
-  if (response.status === 401 && authenticated) doLogout()
-  if (!response.ok) throw new Error(data?.error || `请求失败（${response.status}）`)
-  return data
-}
 
 async function doLogin() {
   authLoading.value = true
@@ -156,6 +140,7 @@ const evalForm = ref({
 const evalResults = ref([])
 const evalLoading = ref(false)
 const evalError = ref('')
+const historyRefreshKey = ref(0)
 
 const indexLabels = {
   flat: 'Flat',
@@ -166,6 +151,7 @@ const indexLabels = {
 }
 
 const metadataFields = computed(() => status.value?.metadata_fields || [])
+const busy = computed(() => loading.value || building.value || comparing.value || evalLoading.value)
 
 const datasetSummary = computed(() => [
   { label: '数据集', value: status.value?.dataset || '未加载' },
@@ -184,11 +170,14 @@ const datasetSummary = computed(() => [
 const resultRows = computed(() => result.value?.results || [])
 
 const resultMetric = computed(() => {
-  const metricMatch = result.value?.index?.match(/\(([^)]+)\)$/)
-  return metricMatch?.[1] || form.value.metric
+  return result.value?.metric || form.value.metric
 })
 
-const valueLabel = computed(() => resultMetric.value === 'ip' ? '内积得分' : '距离')
+const valueLabel = computed(() => {
+  if (resultMetric.value === 'ip') return '内积得分'
+  if (resultMetric.value === 'cosine') return '余弦距离'
+  return '平方 L2 距离'
+})
 
 const bestLabel = computed(() => resultMetric.value === 'ip' ? '最高得分' : '最近结果')
 
@@ -254,30 +243,50 @@ function indexLabel(indexType) {
 }
 
 function parseVectorInput() {
-  const vec = form.value.vector.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
-  if (vec.length === 0) throw new Error('请输入有效的查询向量（逗号分隔）')
+  const parts = form.value.vector.split(',').map(value => value.trim())
+  if (!parts.length || parts.some(value => value === '')) {
+    throw new Error('查询向量必须是完整的逗号分隔数值')
+  }
+  const vec = parts.map(Number)
+  if (vec.some(value => !Number.isFinite(value))) {
+    throw new Error('查询向量只能包含有限数值')
+  }
+  if (status.value?.dim && vec.length !== status.value.dim) {
+    throw new Error(`查询向量维度应为 ${status.value.dim}，当前为 ${vec.length}`)
+  }
   return vec
 }
 
 function buildSearchPayload(indexType = form.value.index_type) {
+  const topK = Number(form.value.top_k)
+  if (!Number.isInteger(topK) || topK < 1 || topK > 50) {
+    throw new Error('Top-K 必须是 1 到 50 的整数')
+  }
   const payload = {
-    top_k: Number(form.value.top_k),
+    top_k: topK,
     index_type: indexType,
     metric: form.value.metric,
   }
   if (queryMode.value === 'vector') {
     payload.vector = parseVectorInput()
   } else {
-    payload.cell_id = Number(form.value.cell_id)
+    const cellId = Number(form.value.cell_id)
+    if (!Number.isInteger(cellId) || cellId < 0 || cellId >= (status.value?.n_cells || 0)) {
+      throw new Error(`细胞编号必须是 0 到 ${(status.value?.n_cells || 1) - 1} 的整数`)
+    }
+    payload.cell_id = cellId
   }
-  if (form.value.cell_type) payload.cell_type = form.value.cell_type
+  if (form.value.cell_type.trim()) payload.cell_type = form.value.cell_type.trim()
   return payload
 }
 
-async function requestSearch(indexType) {
+async function requestSearch(indexType, basePayload = null) {
+  const payload = basePayload
+    ? { ...basePayload, index_type: indexType }
+    : buildSearchPayload(indexType)
   return apiRequest('/api/search', {
     method: 'POST',
-    body: JSON.stringify(buildSearchPayload(indexType)),
+    body: JSON.stringify(payload),
   })
 }
 
@@ -291,6 +300,7 @@ async function search() {
   result.value = null
   try {
     result.value = await requestSearch(form.value.index_type)
+    historyRefreshKey.value += 1
     await fetchStatus()
   } catch (e) {
     error.value = e.message
@@ -319,14 +329,15 @@ async function buildIndex() {
 async function compareIndexes() {
   comparing.value = true
   error.value = ''
-  comparisonResults.value = []
+    comparisonResults.value = []
   const indexTypes = ['flat']
   if (form.value.compare_index_type !== 'flat') indexTypes.push(form.value.compare_index_type)
 
   try {
+    const payloadSnapshot = buildSearchPayload()
     for (const indexType of indexTypes) {
       try {
-        const data = await requestSearch(indexType)
+        const data = await requestSearch(indexType, payloadSnapshot)
         const first = data.results?.[0]
         comparisonResults.value = [
           ...comparisonResults.value,
@@ -354,6 +365,7 @@ async function compareIndexes() {
         ]
       }
     }
+    historyRefreshKey.value += 1
     await fetchStatus()
   } finally {
     comparing.value = false
@@ -365,22 +377,47 @@ async function runEval() {
   evalError.value = ''
   evalResults.value = []
   try {
+    const topK = Number(evalForm.value.top_k)
+    const nQueries = Number(evalForm.value.n_queries)
+    if (!Number.isInteger(topK) || topK < 1 || topK > 50) throw new Error('评测 Top-K 必须是 1 到 50 的整数')
+    if (!Number.isInteger(nQueries) || nQueries < 1 || nQueries > 500) throw new Error('查询样本数必须是 1 到 500 的整数')
     const data = await apiRequest('/api/eval', {
       method: 'POST',
       body: JSON.stringify({
         index_types: evalForm.value.index_types,
-        top_k: Number(evalForm.value.top_k),
-        n_queries: Number(evalForm.value.n_queries),
+        top_k: topK,
+        n_queries: nQueries,
         metric: evalForm.value.metric,
       }),
     })
     evalResults.value = data.results
+    historyRefreshKey.value += 1
   } catch (e) {
     evalError.value = e.message
   } finally {
     evalLoading.value = false
   }
 }
+
+async function handleDatasetChanged(nextStatus) {
+  status.value = nextStatus || await apiRequest('/api/index/status')
+  result.value = null
+  buildInfo.value = null
+  comparisonResults.value = []
+  evalResults.value = []
+  error.value = ''
+  historyRefreshKey.value += 1
+}
+
+async function handleIndexChanged(nextStatus) {
+  status.value = nextStatus || await apiRequest('/api/index/status')
+  buildInfo.value = null
+  comparisonResults.value = []
+}
+
+const queryCellForPlot = computed(() => (
+  Number.isInteger(result.value?.query_cell_id) ? result.value.query_cell_id : null
+))
 
 onMounted(async () => {
   if (token.value) {
@@ -473,9 +510,21 @@ onMounted(async () => {
       <p v-else-if="!userListLoading" class="empty-state">暂无用户数据。</p>
     </section>
 
+    <DatasetManager
+      :status="status"
+      :is-admin="currentUser.role === 'admin'"
+      @changed="handleDatasetChanged"
+    />
+
+    <IndexManager
+      :status="status"
+      :is-admin="currentUser.role === 'admin'"
+      @changed="handleIndexChanged"
+    />
+
     <section class="dataset-card" v-if="status">
       <div class="section-heading">
-        <h2>演示数据说明</h2>
+        <h2>当前数据与索引</h2>
         <span>{{ status.ready ? '索引就绪' : '索引未构建' }}</span>
       </div>
       <div class="dataset-grid">
@@ -487,9 +536,9 @@ onMounted(async () => {
     </section>
 
     <!-- 查询模式切换 -->
-    <section class="mode-switch">
-      <button :class="{ active: queryMode === 'cell' }" @click="queryMode = 'cell'">按细胞编号查询</button>
-      <button :class="{ active: queryMode === 'vector' }" @click="queryMode = 'vector'">按向量查询</button>
+    <section class="mode-switch" role="tablist" aria-label="查询模式">
+      <button :aria-pressed="queryMode === 'cell'" :disabled="busy" :class="{ active: queryMode === 'cell' }" @click="queryMode = 'cell'">按细胞编号查询</button>
+      <button :aria-pressed="queryMode === 'vector'" :disabled="busy" :class="{ active: queryMode === 'vector' }" @click="queryMode = 'vector'">按向量查询</button>
     </section>
 
     <section class="panel">
@@ -537,9 +586,9 @@ onMounted(async () => {
         </select>
       </div>
       <div class="btn-group">
-        <button class="btn-primary" :disabled="loading" @click="search">{{ loading ? '检索中…' : '检索' }}</button>
-        <button class="btn-build" :disabled="building" @click="buildIndex">{{ building ? '构建中…' : '构建索引' }}</button>
-        <button class="btn-compare" :disabled="comparing" @click="compareIndexes">
+        <button class="btn-primary" :disabled="busy" @click="search">{{ loading ? '检索中…' : '检索' }}</button>
+        <button class="btn-build" :disabled="busy" @click="buildIndex">{{ building ? '构建中…' : '构建索引' }}</button>
+        <button class="btn-compare" :disabled="busy" @click="compareIndexes">
           {{ comparing ? '对比中…' : '对比索引' }}
         </button>
       </div>
@@ -549,7 +598,7 @@ onMounted(async () => {
       索引 <b>{{ buildInfo.index }}</b> 构建完成 · 耗时 <b class="highlight">{{ buildInfo.build_ms }} ms</b>
     </section>
 
-    <p class="error" v-if="error">⚠ {{ error }}</p>
+    <p class="error" v-if="error" role="alert">⚠ {{ error }}</p>
 
     <section class="comparison" v-if="comparisonResults.length">
       <div class="section-heading">
@@ -606,7 +655,7 @@ onMounted(async () => {
               <option value="ip">IP（内积）</option>
             </select>
           </div>
-          <button class="btn-eval" :disabled="evalLoading || evalForm.index_types.length === 0" @click="runEval">
+          <button class="btn-eval" :disabled="busy || evalForm.index_types.length === 0" @click="runEval">
             {{ evalLoading ? '评测中…' : '性能评测' }}
           </button>
         </div>
@@ -651,6 +700,11 @@ onMounted(async () => {
         返回 <b>{{ result.returned }}</b> 条 · 索引 <b>{{ result.index }}</b> ·
         查询耗时 <b>{{ result.query_ms }} ms</b>
       </div>
+      <EmbeddingPlot
+        v-if="resultRows.length"
+        :result="result"
+        :query-cell-id="queryCellForPlot"
+      />
       <div v-if="resultRows.length" class="visual-grid">
         <article class="visual-card summary-card">
           <div class="visual-heading">
@@ -713,9 +767,11 @@ onMounted(async () => {
         </article>
       </div>
       <p v-else class="empty-state">未返回匹配结果，请调整 Top-K 或过滤条件后重试。</p>
+      <div v-if="resultRows.length" class="table-scroll">
       <table>
+        <caption class="sr-only">Top-K 相似细胞结果</caption>
         <thead>
-          <tr><th>#</th><th>细胞编号</th><th>名称</th><th>细胞类型</th><th>距离</th></tr>
+          <tr><th>#</th><th>细胞编号</th><th>名称</th><th>细胞类型</th><th>{{ valueLabel }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="(row, i) in result.results" :key="row.cell_id">
@@ -727,7 +783,10 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
+
+    <HistoryPanel :refresh-key="historyRefreshKey" />
     </template>
   </div>
 </template>
@@ -810,6 +869,8 @@ button:disabled { opacity: .6; cursor: not-allowed; }
   padding: 14px; font-size: 14px; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px;
   overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.table-scroll { overflow-x: auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 th, td { padding: 9px 12px; text-align: left; font-size: 14px; border-bottom: 1px solid #f0f1f3; }
 th { background: #f9fafb; color: #6b7280; font-weight: 600; }
 .eval-panel { background: #fff; padding: 16px; border-radius: 8px; margin-top: 16px;
@@ -864,7 +925,7 @@ th { background: #f9fafb; color: #6b7280; font-weight: 600; }
 .auth-msg { margin: 10px 0 0; font-size: 13px; color: #dc2626; min-height: 18px; }
 .auth-msg.auth-ok { color: #0f766e; }
 .user-mgmt { background: #fff; padding: 16px; border-radius: 8px; margin-top: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow-x: auto; }
 .btn-refresh { padding: 5px 14px; border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb;
   font-size: 13px; color: #374151; cursor: pointer; }
 .user-table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px;

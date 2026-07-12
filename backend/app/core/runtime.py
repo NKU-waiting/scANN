@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.core.extensions import db
 def configure_runtime(app: Flask) -> None:
     """Validate deployment settings and install common runtime hooks."""
     _validate_config(app)
+    _configure_numba(app)
     _configure_logging(app)
 
     @app.before_request
@@ -68,7 +70,10 @@ def _configure_logging(app: Flask) -> None:
     log_dir = Path(app.config["LOG_DIR"])
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "scann.log"
-    if any(getattr(handler, "baseFilename", None) == str(log_path) for handler in app.logger.handlers):
+    if any(
+        getattr(handler, "baseFilename", None) == str(log_path)
+        for handler in app.logger.handlers
+    ):
         return
 
     handler = RotatingFileHandler(log_path, maxBytes=2 * 1024 * 1024, backupCount=3)
@@ -77,3 +82,12 @@ def _configure_logging(app: Flask) -> None:
         logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
     )
     app.logger.addHandler(handler)
+
+
+def _configure_numba(app: Flask) -> None:
+    """Route UMAP's Numba cache to an explicitly writable runtime directory."""
+    cache_dir = Path(app.config["NUMBA_CACHE_DIR"])
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("NUMBA_CACHE_DIR", str(cache_dir))
+    os.environ.setdefault("NUMBA_CACHE_LOCATOR_CLASSES", "UserProvidedCacheLocator")
+    os.environ.setdefault("NUMBA_NUM_THREADS", str(app.config["NUMBA_NUM_THREADS"]))

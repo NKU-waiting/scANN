@@ -3,6 +3,7 @@
 通过环境变量覆盖，便于区分开发 / 生产。
 """
 import os
+import tempfile
 from pathlib import Path
 
 # 项目根目录: backend/
@@ -66,3 +67,11 @@ class Config:
     DEFAULT_TOP_K = 10
     MAX_TOP_K = int(os.environ.get("SCANN_MAX_TOP_K", 1000))
     MAX_EVAL_QUERIES = int(os.environ.get("SCANN_MAX_EVAL_QUERIES", 1000))
+    MAX_VISUALIZATION_POINTS = int(
+        os.environ.get("SCANN_MAX_VISUALIZATION_POINTS", 3000)
+    )
+    NUMBA_CACHE_DIR = os.environ.get(
+        "SCANN_NUMBA_CACHE_DIR",
+        str(Path(tempfile.gettempdir()) / "scann-numba-cache"),
+    )
+    NUMBA_NUM_THREADS = int(os.environ.get("SCANN_NUMBA_NUM_THREADS", 1))

@@ -5,10 +5,11 @@ POST /api/search
     {"cell_id": 0, "top_k": 5, "index_type": "flat", "metric": "l2", "cell_type": "type_1"}
     {"vector": [...], "top_k": 5}
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from app.core.config import Config
 from app.core.security import require_auth
+from app.services.history import history_service
 from app.services.search import search_service
 
 bp = Blueprint("search", __name__, url_prefix="/api")
@@ -50,7 +51,14 @@ def search():
             result = search_service.search_by_vector(data["vector"], top_k, cell_type)
         else:
             cell_id = _parse_int(data["cell_id"], "cell_id")
+            data["cell_id"] = cell_id
             result = search_service.search_by_cell(cell_id, top_k, cell_type)
+            result["query_cell_id"] = cell_id
+        if has_vector:
+            result["query_cell_id"] = None
+        data["top_k"] = top_k
+        log = history_service.record_query(g.current_user.id, data, result)
+        result["query_id"] = log.id
     except (TypeError, ValueError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
 

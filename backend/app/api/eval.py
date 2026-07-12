@@ -2,11 +2,12 @@
 
 POST /api/eval   评测一组 ANN 索引相对精确检索的召回率与查询耗时。
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from app.core.config import Config
 from app.core.security import require_auth
 from app.services.eval import evaluate_index
+from app.services.history import history_service
 from app.services.index import VALID_INDEX_TYPES, VALID_METRICS
 from app.services.search import search_service
 
@@ -56,6 +57,15 @@ def evaluate():
                 metric=metric,
             )
             results.append(result)
+        log = history_service.record_evaluation(
+            user_id=g.current_user.id,
+            dataset=dataset,
+            top_k=top_k,
+            n_queries=results[0]["n_queries"],
+            metric=metric,
+            index_types=index_types,
+            results=results,
+        )
     except (TypeError, ValueError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
 
@@ -66,6 +76,7 @@ def evaluate():
         top_k=top_k,
         n_queries=results[0]["n_queries"],
         metric=metric,
+        evaluation_id=log.id,
     )
 
 
