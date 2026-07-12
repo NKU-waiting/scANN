@@ -6,45 +6,46 @@ from flask import Blueprint, jsonify, request
 
 from app.core.config import Config
 from app.services.eval import evaluate_index
+from app.services.index import VALID_INDEX_TYPES, VALID_METRICS
 from app.services.search import search_service
 
 bp = Blueprint("eval", __name__, url_prefix="/api")
 
-VALID_INDEX_TYPES = {"flat", "faiss", "ivf", "hnsw", "pq"}
-
-
 @bp.post("/eval")
 def evaluate():
-    data = request.get_json(silent=True) or {}
+    try:
+        data = request.get_json(silent=True)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise ValueError("请求体必须是 JSON 对象")
 
-    index_types = data.get("index_types", ["flat"])
-    if not isinstance(index_types, list) or len(index_types) == 0:
-        return jsonify(error="index_types 必须是非空数组"), 400
+        index_types = data.get("index_types", ["flat"])
+        if not isinstance(index_types, list) or not index_types:
+            raise ValueError("index_types 必须是非空数组")
+        if any(not isinstance(item, str) for item in index_types):
+            raise ValueError("index_types 中的值必须是字符串")
+        index_types = [item.strip().lower() for item in index_types]
+        invalid = [item for item in index_types if item not in VALID_INDEX_TYPES]
+        if invalid:
+            raise ValueError(f"不支持的索引类型: {invalid}")
 
-    invalid = [t for t in index_types if t not in VALID_INDEX_TYPES]
-    if invalid:
-        return jsonify(
-            error=f"不支持的索引类型: {invalid}",
-            valid_types=sorted(VALID_INDEX_TYPES),
-        ), 400
+        top_k = _parse_positive_int(data.get("top_k", Config.DEFAULT_TOP_K), "top_k")
+        n_queries = _parse_positive_int(data.get("n_queries", 100), "n_queries")
+        if top_k > Config.MAX_TOP_K:
+            raise ValueError(f"top_k 不能超过 {Config.MAX_TOP_K}")
+        if n_queries > Config.MAX_EVAL_QUERIES:
+            raise ValueError(f"n_queries 不能超过 {Config.MAX_EVAL_QUERIES}")
 
-    top_k = int(data.get("top_k", Config.DEFAULT_TOP_K))
-    n_queries = int(data.get("n_queries", 100))
-    metric = data.get("metric", Config.DEFAULT_METRIC)
+        metric = data.get("metric", Config.DEFAULT_METRIC)
+        if not isinstance(metric, str) or metric.lower() not in VALID_METRICS:
+            raise ValueError(f"metric 仅支持 {', '.join(sorted(VALID_METRICS))}")
+        metric = metric.lower()
 
-    if metric not in ("l2", "ip"):
-        return jsonify(error="metric 仅支持 'l2' 或 'ip'"), 400
-    if top_k < 1:
-        return jsonify(error="top_k 必须 >= 1"), 400
-    if n_queries < 1:
-        return jsonify(error="n_queries 必须 >= 1"), 400
-
-    search_service.ensure_initialized()
-    dataset = search_service.dataset
-
-    results = []
-    for index_type in index_types:
-        try:
+        search_service.ensure_initialized()
+        dataset = search_service.dataset
+        results = []
+        for index_type in index_types:
             result = evaluate_index(
                 dataset=dataset,
                 index_type=index_type,
@@ -52,15 +53,29 @@ def evaluate():
                 n_queries=n_queries,
                 metric=metric,
             )
-        except Exception as e:
-            return jsonify(error=f"评测 {index_type} 时出错: {e}"), 500
-        results.append(result)
+            results.append(result)
+    except (TypeError, ValueError, RuntimeError) as exc:
+        return jsonify(error=str(exc)), 400
 
     return jsonify(
         results=results,
         dataset=dataset.name,
         n_cells=dataset.n_cells,
         top_k=top_k,
-        n_queries=n_queries,
+        n_queries=results[0]["n_queries"],
         metric=metric,
     )
+
+
+def _parse_positive_int(value, field: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field} 必须是正整数")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"{field} 必须是正整数")
+    try:
+        result = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{field} 必须是正整数") from exc
+    if result < 1:
+        raise ValueError(f"{field} 必须是正整数")
+    return result

@@ -3,10 +3,18 @@
 通过 `create_index(index_type, dim, metric)` 工厂获取实现，
 新增 ANN 算法只需实现 BaseIndex 接口并在此注册。
 """
-from .base import BaseIndex
+from .base import BaseIndex, VALID_METRICS
 from .flat_index import FlatIndex
 
-__all__ = ["BaseIndex", "FlatIndex", "create_index"]
+VALID_INDEX_TYPES = frozenset({"flat", "faiss", "ivf", "hnsw", "pq"})
+
+__all__ = [
+    "BaseIndex",
+    "FlatIndex",
+    "VALID_INDEX_TYPES",
+    "VALID_METRICS",
+    "create_index",
+]
 
 
 def create_index(index_type: str, dim: int, metric: str = "l2") -> BaseIndex:

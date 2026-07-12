@@ -15,7 +15,7 @@ from app.core.config import Config
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    SECRET_KEY = "test-secret"
+    SECRET_KEY = "test-secret-key-with-at-least-thirty-two-bytes"
 
 
 @pytest.fixture()

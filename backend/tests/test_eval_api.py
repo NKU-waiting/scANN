@@ -9,26 +9,25 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
+from app.core.config import Config
 from app.services.search import search_service
+
+
+class TestConfig(Config):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    SECRET_KEY = "test-secret-key-with-at-least-thirty-two-bytes"
 
 
 @pytest.fixture()
 def client():
-    search_service.dataset = None
-    search_service.index = None
-    search_service.index_type = "flat"
-    search_service.metric = "l2"
-
-    app = create_app()
-    app.config.update(TESTING=True)
+    search_service.reset()
+    app = create_app(TestConfig)
 
     with app.test_client() as test_client:
         yield test_client
 
-    search_service.dataset = None
-    search_service.index = None
-    search_service.index_type = "flat"
-    search_service.metric = "l2"
+    search_service.reset()
 
 
 def test_eval_flat_returns_correct_structure(client):
@@ -66,7 +65,7 @@ def test_eval_flat_self_recall_is_1(client):
 def test_eval_multiple_index_types(client):
     response = client.post(
         "/api/eval",
-        json={"index_types": ["flat", "flat"], "top_k": 5, "n_queries": 10},
+        json={"index_types": ["flat", "hnsw"], "top_k": 5, "n_queries": 10},
     )
     assert response.status_code == 200
     assert len(response.get_json()["results"]) == 2
@@ -100,6 +99,23 @@ def test_eval_rejects_empty_index_types(client):
 def test_eval_rejects_invalid_metric(client):
     response = client.post(
         "/api/eval",
-        json={"index_types": ["flat"], "metric": "cosine"},
+        json={"index_types": ["flat"], "metric": "manhattan"},
     )
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {"index_types": [1]},
+        {"index_types": ["flat"], "top_k": 0},
+        {"index_types": ["flat"], "top_k": "bad"},
+        {"index_types": ["flat"], "n_queries": 0},
+    ],
+)
+def test_eval_rejects_malformed_values(client, payload):
+    response = client.post("/api/eval", json=payload)
+
+    assert response.status_code == 400
+    assert "error" in response.get_json()

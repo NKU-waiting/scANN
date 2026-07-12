@@ -32,5 +32,7 @@ class Config:
 
     # 默认检索参数
     DEFAULT_INDEX_TYPE = os.environ.get("SCANN_DEFAULT_INDEX", "flat")  # flat | faiss
-    DEFAULT_METRIC = os.environ.get("SCANN_DEFAULT_METRIC", "l2")       # l2 | ip
+    DEFAULT_METRIC = os.environ.get("SCANN_DEFAULT_METRIC", "l2")
     DEFAULT_TOP_K = 10
+    MAX_TOP_K = int(os.environ.get("SCANN_MAX_TOP_K", 1000))
+    MAX_EVAL_QUERIES = int(os.environ.get("SCANN_MAX_EVAL_QUERIES", 1000))
