@@ -1,4 +1,5 @@
 """Persistence and bounded retrieval for user-visible query/evaluation history."""
+
 from __future__ import annotations
 
 from app.core.extensions import db
@@ -19,9 +20,7 @@ class HistoryService:
             index_type=result["index_type"],
             metric=result["metric"],
             filters=(
-                {"cell_type": request_data["cell_type"]}
-                if request_data.get("cell_type")
-                else {}
+                {"cell_type": request_data["cell_type"]} if request_data.get("cell_type") else {}
             ),
             query_ms=float(result["query_ms"]),
             returned=int(result["returned"]),

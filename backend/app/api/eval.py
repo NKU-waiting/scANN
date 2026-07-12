@@ -2,7 +2,8 @@
 
 POST /api/eval   评测一组 ANN 索引相对精确检索的召回率与查询耗时。
 """
-from flask import Blueprint, g, jsonify, request
+
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app.core.config import Config
 from app.core.security import require_auth
@@ -12,6 +13,7 @@ from app.services.index import VALID_INDEX_TYPES, VALID_METRICS
 from app.services.search import search_service
 
 bp = Blueprint("eval", __name__, url_prefix="/api")
+
 
 @bp.post("/eval")
 @require_auth
@@ -35,10 +37,12 @@ def evaluate():
 
         top_k = _parse_positive_int(data.get("top_k", Config.DEFAULT_TOP_K), "top_k")
         n_queries = _parse_positive_int(data.get("n_queries", 100), "n_queries")
-        if top_k > Config.MAX_TOP_K:
-            raise ValueError(f"top_k 不能超过 {Config.MAX_TOP_K}")
-        if n_queries > Config.MAX_EVAL_QUERIES:
-            raise ValueError(f"n_queries 不能超过 {Config.MAX_EVAL_QUERIES}")
+        max_top_k = current_app.config["MAX_TOP_K"]
+        max_eval_queries = current_app.config["MAX_EVAL_QUERIES"]
+        if top_k > max_top_k:
+            raise ValueError(f"top_k 不能超过 {max_top_k}")
+        if n_queries > max_eval_queries:
+            raise ValueError(f"n_queries 不能超过 {max_eval_queries}")
 
         metric = data.get("metric", Config.DEFAULT_METRIC)
         if not isinstance(metric, str) or metric.lower() not in VALID_METRICS:

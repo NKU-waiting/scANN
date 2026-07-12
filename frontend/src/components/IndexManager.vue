@@ -1,18 +1,20 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiRequest } from '../api'
 
 const props = defineProps({
   status: { type: Object, default: null },
   isAdmin: { type: Boolean, default: false },
+  disabled: { type: Boolean, default: false },
 })
-const emit = defineEmits(['changed'])
+const emit = defineEmits(['changed', 'busy'])
 
 const artifacts = ref([])
 const name = ref('')
 const loading = ref(false)
 const action = ref('')
 const error = ref('')
+const localBusy = computed(() => loading.value || Boolean(action.value))
 
 async function reload() {
   loading.value = true
@@ -85,6 +87,7 @@ watch(
   () => [props.status?.dataset_fingerprint, props.status?.index_record_id],
   reload,
 )
+watch(localBusy, value => emit('busy', value), { immediate: true })
 onMounted(reload)
 </script>
 
@@ -95,16 +98,16 @@ onMounted(reload)
         <h2 id="index-manager-title">索引持久化</h2>
         <p>索引与数据集指纹绑定；只有兼容当前数据集的索引可以加载。</p>
       </div>
-      <button class="secondary" :disabled="loading" @click="reload">
+      <button class="secondary" :disabled="disabled || localBusy" @click="reload">
         {{ loading ? '刷新中…' : '刷新' }}
       </button>
     </div>
     <div class="save-row">
       <label>
         <span>索引名称（可选）</span>
-        <input v-model.trim="name" maxlength="100" placeholder="自动生成名称" />
+        <input v-model.trim="name" maxlength="100" :disabled="disabled || localBusy" placeholder="自动生成名称" />
       </label>
-      <button class="primary" :disabled="!status?.ready || Boolean(action)" @click="save">
+      <button class="primary" :disabled="disabled || !status?.ready || localBusy" @click="save">
         {{ action === 'save' ? '保存中…' : '保存当前索引' }}
       </button>
       <span v-if="status?.persisted" class="persisted">当前已保存 · #{{ status.index_record_id }}</span>
@@ -129,13 +132,13 @@ onMounted(reload)
             <td class="actions">
               <button
                 class="secondary"
-                :disabled="artifact.active || !artifact.compatible || Boolean(action)"
+                :disabled="disabled || artifact.active || !artifact.compatible || localBusy"
                 @click="load(artifact)"
               >加载</button>
               <button
                 v-if="isAdmin"
                 class="danger"
-                :disabled="!artifact.deletable || Boolean(action)"
+                :disabled="disabled || !artifact.deletable || localBusy"
                 @click="remove(artifact)"
               >删除</button>
             </td>

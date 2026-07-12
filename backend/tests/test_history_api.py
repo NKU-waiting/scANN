@@ -1,4 +1,5 @@
 """Regression tests for durable query and evaluation history."""
+
 from __future__ import annotations
 
 import pytest
@@ -92,6 +93,30 @@ def test_regular_users_only_see_their_history_while_admin_sees_all(client):
         for record in admin_records
         if record["user_id"] != alice_records[0]["user_id"]
     )
+
+
+def test_deleting_user_atomically_removes_query_and_evaluation_history(client):
+    user_headers = _register_and_headers(client, "retired")
+    client.post("/api/search", json={"cell_id": 0}, headers=user_headers)
+    client.post(
+        "/api/eval",
+        json={"index_types": ["flat"], "top_k": 3, "n_queries": 3},
+        headers=user_headers,
+    )
+
+    admin_headers = _admin_headers(client)
+    users = client.get("/api/auth/users", headers=admin_headers).get_json()["users"]
+    retired = next(user for user in users if user["username"] == "retired")
+    deleted = client.delete(f"/api/auth/users/{retired['id']}", headers=admin_headers)
+    queries = client.get("/api/history/queries", headers=admin_headers).get_json()["queries"]
+    evaluations = client.get(
+        "/api/history/evaluations",
+        headers=admin_headers,
+    ).get_json()["evaluations"]
+
+    assert deleted.status_code == 200
+    assert all(record["user_id"] != retired["id"] for record in queries)
+    assert all(record["user_id"] != retired["id"] for record in evaluations)
 
 
 def test_evaluation_history_persists_result_snapshot(client):

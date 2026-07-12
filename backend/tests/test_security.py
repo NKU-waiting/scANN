@@ -1,10 +1,16 @@
 """Access-control and safe-runtime regression tests."""
+
 from __future__ import annotations
 
 import pytest
 
 from app import create_app
-from app.core.config import Config, DEVELOPMENT_SECRET
+from app.core.config import (
+    DEVELOPMENT_SECRET,
+    EXAMPLE_ADMIN_PASSWORD,
+    EXAMPLE_SECRET,
+    Config,
+)
 from app.services.search import search_service
 
 
@@ -110,21 +116,23 @@ def test_cors_only_allows_configured_origins(client):
     assert "Access-Control-Allow-Origin" not in rejected.headers
 
 
-def test_production_rejects_development_secret():
+@pytest.mark.parametrize("unsafe_secret", [DEVELOPMENT_SECRET, EXAMPLE_SECRET])
+def test_production_rejects_development_or_example_secret(unsafe_secret):
     class UnsafeProductionConfig(TestConfig):
         ENVIRONMENT = "production"
-        SECRET_KEY = DEVELOPMENT_SECRET
+        SECRET_KEY = unsafe_secret
         ADMIN_PASSWORD = "strong-bootstrap-password"
 
     with pytest.raises(RuntimeError, match="SCANN_SECRET_KEY"):
         create_app(UnsafeProductionConfig)
 
 
-def test_production_rejects_default_admin_password():
+@pytest.mark.parametrize("unsafe_password", ["admin123", EXAMPLE_ADMIN_PASSWORD])
+def test_production_rejects_default_or_example_admin_password(unsafe_password):
     class UnsafeProductionConfig(TestConfig):
         ENVIRONMENT = "production"
         SECRET_KEY = "production-secret-key-with-at-least-thirty-two-bytes"
-        ADMIN_PASSWORD = "admin123"
+        ADMIN_PASSWORD = unsafe_password
 
     with pytest.raises(RuntimeError, match="SCANN_ADMIN_PASSWORD"):
         create_app(UnsafeProductionConfig)

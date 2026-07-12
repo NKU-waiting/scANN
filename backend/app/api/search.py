@@ -5,6 +5,7 @@ POST /api/search
     {"cell_id": 0, "top_k": 5, "index_type": "flat", "metric": "l2", "cell_type": "type_1"}
     {"vector": [...], "top_k": 5}
 """
+
 from flask import Blueprint, g, jsonify, request
 
 from app.core.config import Config
@@ -41,21 +42,22 @@ def search():
 
         index_type = _parse_optional_string(data.get("index_type"), "index_type")
         metric = _parse_optional_string(data.get("metric"), "metric")
-        search_service.ensure_initialized()
-        if (index_type and index_type != search_service.index_type) or (
-            metric and metric != search_service.metric
-        ):
-            search_service.build_index(index_type, metric)
-
-        if has_vector:
-            result = search_service.search_by_vector(data["vector"], top_k, cell_type)
-        else:
+        if not has_vector:
             cell_id = _parse_int(data["cell_id"], "cell_id")
             data["cell_id"] = cell_id
-            result = search_service.search_by_cell(cell_id, top_k, cell_type)
-            result["query_cell_id"] = cell_id
-        if has_vector:
-            result["query_cell_id"] = None
+        with search_service.lifecycle_lock():
+            search_service.ensure_initialized()
+            if (index_type and index_type != search_service.index_type) or (
+                metric and metric != search_service.metric
+            ):
+                search_service.build_index(index_type, metric)
+
+            if has_vector:
+                result = search_service.search_by_vector(data["vector"], top_k, cell_type)
+                result["query_cell_id"] = None
+            else:
+                result = search_service.search_by_cell(cell_id, top_k, cell_type)
+                result["query_cell_id"] = cell_id
         data["top_k"] = top_k
         log = history_service.record_query(g.current_user.id, data, result)
         result["query_id"] = log.id

@@ -2,6 +2,7 @@
 
 所有 ANN / 精确索引实现都遵循该接口，使检索服务与具体算法解耦。
 """
+
 from __future__ import annotations
 
 import abc

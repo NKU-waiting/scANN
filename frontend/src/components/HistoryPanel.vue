@@ -4,6 +4,7 @@ import { apiRequest } from '../api'
 
 const props = defineProps({
   refreshKey: { type: Number, default: 0 },
+  isAdmin: { type: Boolean, default: false },
 })
 
 const tab = ref('queries')
@@ -37,6 +38,15 @@ function formatIndexes(record) {
   return record.index_types.join(' / ')
 }
 
+function effectiveTopK(record) {
+  return record.results[0]?.effective_top_k ?? record.top_k
+}
+
+function topKLabel(record) {
+  const effective = effectiveTopK(record)
+  return effective === record.top_k ? `K=${effective}` : `K=${effective}（请求 ${record.top_k}）`
+}
+
 watch(() => props.refreshKey, reload)
 onMounted(reload)
 </script>
@@ -58,31 +68,33 @@ onMounted(reload)
     <div class="table-scroll">
       <table v-if="tab === 'queries'">
         <caption class="sr-only">最近查询记录</caption>
-        <thead><tr><th>时间</th><th>数据集</th><th>查询</th><th>索引 / 度量</th><th>Top-K</th><th>耗时</th></tr></thead>
+        <thead><tr><th>时间</th><th v-if="isAdmin">用户 ID</th><th>数据集</th><th>查询</th><th>索引 / 度量</th><th>Top-K</th><th>耗时</th></tr></thead>
         <tbody>
           <tr v-for="record in queries" :key="record.id">
             <td>{{ formatDate(record.created_at) }}</td>
+            <td v-if="isAdmin">#{{ record.user_id }}</td>
             <td>{{ record.dataset_name }}</td>
             <td>{{ record.query_mode === 'cell' ? `细胞 #${record.query_cell_id}` : '向量（未留存）' }}</td>
             <td>{{ record.index_type }} / {{ record.metric }}</td>
             <td>{{ record.returned }}/{{ record.top_k }}</td>
             <td>{{ record.query_ms }} ms</td>
           </tr>
-          <tr v-if="!queries.length"><td colspan="6" class="empty">暂无查询记录。</td></tr>
+          <tr v-if="!queries.length"><td :colspan="isAdmin ? 7 : 6" class="empty">暂无查询记录。</td></tr>
         </tbody>
       </table>
       <table v-else>
         <caption class="sr-only">最近评测记录</caption>
-        <thead><tr><th>时间</th><th>数据集</th><th>索引</th><th>参数</th><th>最佳召回率</th></tr></thead>
+        <thead><tr><th>时间</th><th v-if="isAdmin">用户 ID</th><th>数据集</th><th>索引</th><th>参数</th><th>最佳召回率</th></tr></thead>
         <tbody>
           <tr v-for="record in evaluations" :key="record.id">
             <td>{{ formatDate(record.created_at) }}</td>
+            <td v-if="isAdmin">#{{ record.user_id }}</td>
             <td>{{ record.dataset_name }}</td>
             <td>{{ formatIndexes(record) }}</td>
-            <td>K={{ record.top_k }} · {{ record.n_queries }} 查询 · {{ record.metric }}</td>
+            <td>{{ topKLabel(record) }} · {{ record.n_queries }} 查询 · {{ record.metric }}</td>
             <td>{{ (Math.max(...record.results.map(row => row.recall_at_k)) * 100).toFixed(1) }}%</td>
           </tr>
-          <tr v-if="!evaluations.length"><td colspan="5" class="empty">暂无评测记录。</td></tr>
+          <tr v-if="!evaluations.length"><td :colspan="isAdmin ? 6 : 5" class="empty">暂无评测记录。</td></tr>
         </tbody>
       </table>
     </div>

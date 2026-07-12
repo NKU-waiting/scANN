@@ -30,7 +30,7 @@ export async function apiRequest(path, options = {}, authenticated = true) {
       data = { error: text }
     }
   }
-  if (response.status === 401 && authenticated) unauthorizedHandler()
+  if (response.status === 401 && authenticated) unauthorizedHandler(token)
   if (!response.ok) throw new Error(data?.error || `请求失败（${response.status}）`)
   return data
 }

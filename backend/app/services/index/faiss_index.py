@@ -8,6 +8,7 @@
 
 后续可在 build() 中暴露 nlist / nprobe / M / efSearch 等调参入口。
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -27,11 +28,8 @@ class FaissIndex(BaseIndex):
 
     def _metric_flag(self):
         import faiss
-        return (
-            faiss.METRIC_INNER_PRODUCT
-            if self.metric in ("ip", "cosine")
-            else faiss.METRIC_L2
-        )
+
+        return faiss.METRIC_INNER_PRODUCT if self.metric in ("ip", "cosine") else faiss.METRIC_L2
 
     def build(self, vectors: np.ndarray) -> None:
         import faiss
@@ -50,11 +48,7 @@ class FaissIndex(BaseIndex):
             index.train(vectors)
             index.nprobe = min(nlist, max(1, int(np.sqrt(nlist))))
         elif self.variant == "pq":
-            divisors = [
-                candidate
-                for candidate in range(1, min(8, d) + 1)
-                if d % candidate == 0
-            ]
+            divisors = [candidate for candidate in range(1, min(8, d) + 1) if d % candidate == 0]
             m_sub = max(divisors)
             # FAISS clustering is most stable with roughly 39 training rows per centroid.
             max_centroids = max(2, vectors.shape[0] // 39)
@@ -81,6 +75,7 @@ class FaissIndex(BaseIndex):
 
     def save(self, path: str) -> None:
         import faiss
+
         faiss.write_index(self._index, path)
 
     def load(self, path: str) -> None:

@@ -1,4 +1,5 @@
 """Persistent, validated, and atomically activated dataset lifecycle."""
+
 from __future__ import annotations
 
 import shutil
@@ -12,9 +13,12 @@ from werkzeug.datastructures import FileStorage
 
 from app.core.extensions import db
 from app.models import DatasetRecord
-from app.services.data_loader import file_sha256, load_dataset_file
+from app.services.data_loader import (
+    file_sha256,
+    load_dataset_file,
+    semantic_dataset_fingerprint,
+)
 from app.services.search import search_service
-
 
 ALLOWED_DATASET_SUFFIXES = frozenset({".h5ad", ".npy", ".csv"})
 
@@ -33,32 +37,39 @@ class ActiveDatasetError(ValueError):
 
 class DatasetService:
     def list_resources(self) -> list[dict]:
-        search_service.ensure_initialized()
-        active_id = search_service.dataset.record_id if search_service.dataset else None
-        demo_active = search_service.dataset is not None and active_id is None
-        resources = [{
-            "id": None,
-            "name": "demo",
-            "original_filename": None,
-            "file_format": "demo",
-            "source_type": "generated",
-            "use_obsm": None,
-            "n_cells": (
-                search_service.dataset.n_cells
-                if demo_active
-                else current_app.config["DEMO_N_CELLS"]
-            ),
-            "dim": search_service.dataset.dim if demo_active else current_app.config["DEMO_DIM"],
-            "metadata_fields": ["cell_type"],
-            "fingerprint": search_service.dataset.fingerprint if demo_active else None,
-            "owner_id": None,
-            "active": demo_active,
-            "deletable": False,
-            "created_at": None,
-        }]
-        records = DatasetRecord.query.order_by(DatasetRecord.created_at, DatasetRecord.id).all()
-        resources.extend(record.to_dict(active=record.id == active_id) for record in records)
-        return resources
+        with search_service.lifecycle_lock():
+            search_service.ensure_initialized()
+            active_id = search_service.dataset.record_id if search_service.dataset else None
+            demo_active = search_service.dataset is not None and active_id is None
+            resources = [
+                {
+                    "id": None,
+                    "name": "demo",
+                    "original_filename": None,
+                    "file_format": "demo",
+                    "source_type": "generated",
+                    "use_obsm": None,
+                    "n_cells": (
+                        search_service.dataset.n_cells
+                        if demo_active
+                        else current_app.config["DEMO_N_CELLS"]
+                    ),
+                    "dim": (
+                        search_service.dataset.dim
+                        if demo_active
+                        else current_app.config["DEMO_DIM"]
+                    ),
+                    "metadata_fields": ["cell_type"],
+                    "fingerprint": search_service.dataset.fingerprint if demo_active else None,
+                    "owner_id": None,
+                    "active": demo_active,
+                    "deletable": False,
+                    "created_at": None,
+                }
+            ]
+            records = DatasetRecord.query.order_by(DatasetRecord.created_at, DatasetRecord.id).all()
+            resources.extend(record.to_dict(active=record.id == active_id) for record in records)
+            return resources
 
     def upload(
         self,
@@ -122,75 +133,81 @@ class DatasetService:
             temp_path.unlink(missing_ok=True)
 
     def activate(self, dataset_id: int) -> dict:
-        record = db.session.get(DatasetRecord, dataset_id)
-        if record is None:
-            raise DatasetNotFoundError("数据集不存在")
-        dataset = self._load_record(record)
-        snapshot = search_service.snapshot()
-        try:
-            status = search_service.set_dataset(dataset, index_type="flat", metric="l2")
-            self._mark_active(record)
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            search_service.restore(snapshot)
-            raise
-        return {"dataset": record.to_dict(active=True), "status": status}
+        with search_service.lifecycle_lock():
+            record = db.session.get(DatasetRecord, dataset_id)
+            if record is None:
+                raise DatasetNotFoundError("数据集不存在")
+            dataset = self._load_record(record)
+            snapshot = search_service.snapshot()
+            try:
+                status = search_service.set_dataset(dataset, index_type="flat", metric="l2")
+                self._mark_active(record)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                search_service.restore(snapshot)
+                raise
+            return {"dataset": record.to_dict(active=True), "status": status}
 
     def activate_demo(self) -> dict:
-        snapshot = search_service.snapshot()
-        try:
-            status = search_service.load_demo()
-            for record in DatasetRecord.query.filter_by(is_active=True).all():
-                record.is_active = False
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            search_service.restore(snapshot)
-            raise
-        return {"dataset": self.list_resources()[0], "status": status}
+        with search_service.lifecycle_lock():
+            snapshot = search_service.snapshot()
+            try:
+                status = search_service.load_demo()
+                for record in DatasetRecord.query.filter_by(is_active=True).all():
+                    record.is_active = False
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                search_service.restore(snapshot)
+                raise
+            return {"dataset": self.list_resources()[0], "status": status}
 
     def delete(self, dataset_id: int) -> dict:
-        record = db.session.get(DatasetRecord, dataset_id)
-        if record is None:
-            raise DatasetNotFoundError("数据集不存在")
-        active_id = search_service.dataset.record_id if search_service.dataset else None
-        if record.is_active or record.id == active_id:
-            raise ActiveDatasetError("不能删除当前活动数据集，请先切换到其他数据集")
+        with search_service.lifecycle_lock():
+            record = db.session.get(DatasetRecord, dataset_id)
+            if record is None:
+                raise DatasetNotFoundError("数据集不存在")
+            active_id = search_service.dataset.record_id if search_service.dataset else None
+            if record.is_active or record.id == active_id:
+                raise ActiveDatasetError("不能删除当前活动数据集，请先切换到其他数据集")
 
-        source = self._record_path(record)
-        if not source.is_file():
-            raise ValueError("数据集文件不存在，拒绝执行不完整删除")
-        tombstone = source.with_name(f".{source.name}.{uuid.uuid4().hex}.deleting")
-        from app.services.indexes import index_artifact_service
+            source = self._record_path(record)
+            if not source.is_file():
+                raise ValueError("数据集文件不存在，拒绝执行不完整删除")
+            tombstone = source.with_name(f".{source.name}.{uuid.uuid4().hex}.deleting")
+            from app.services.indexes import index_artifact_service
 
-        cleanup = index_artifact_service.prepare_dataset_cleanup(record.id)
-        try:
-            source.replace(tombstone)
-            name = record.name
-            db.session.delete(record)
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            cleanup.restore()
-            if tombstone.exists() and not source.exists():
-                tombstone.replace(source)
-            raise
-        cleanup.finalize()
-        tombstone.unlink(missing_ok=True)
-        return {"message": "数据集已删除", "id": dataset_id, "name": name}
+            cleanup = index_artifact_service.prepare_dataset_cleanup(record.id)
+            try:
+                source.replace(tombstone)
+                name = record.name
+                db.session.delete(record)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                cleanup.restore()
+                if tombstone.exists() and not source.exists():
+                    tombstone.replace(source)
+                raise
+            cleanup.finalize()
+            tombstone.unlink(missing_ok=True)
+            return {"message": "数据集已删除", "id": dataset_id, "name": name}
 
     def restore_active(self) -> dict | None:
-        record = DatasetRecord.query.filter_by(is_active=True).order_by(DatasetRecord.id).first()
-        if record is None:
-            return None
-        try:
-            dataset = self._load_record(record)
-            return search_service.set_dataset(dataset, index_type="flat", metric="l2")
-        except Exception:
-            record.is_active = False
-            db.session.commit()
-            raise
+        with search_service.lifecycle_lock():
+            record = (
+                DatasetRecord.query.filter_by(is_active=True).order_by(DatasetRecord.id).first()
+            )
+            if record is None:
+                return None
+            try:
+                dataset = self._load_record(record)
+                return search_service.set_dataset(dataset, index_type="flat", metric="l2")
+            except Exception:
+                record.is_active = False
+                db.session.commit()
+                raise
 
     def resolve_managed_path(self, raw_path: str) -> Path:
         if not isinstance(raw_path, str) or not raw_path.strip():
@@ -217,59 +234,74 @@ class DatasetService:
         activate: bool,
     ) -> dict:
         dataset = load_dataset_file(str(temp_path), use_obsm=use_obsm)
-        fingerprint = file_sha256(str(temp_path))
+        source_fingerprint = file_sha256(str(temp_path))
         suffix = temp_path.suffix.lower()
+        representation = use_obsm if suffix == ".h5ad" else None
+        fingerprint = semantic_dataset_fingerprint(
+            dataset,
+            source_fingerprint,
+            representation,
+        )
         final_relative = Path("uploads") / f"{uuid.uuid4().hex}{suffix}"
         final_path = self._inside_data_root(final_relative)
-        temp_path.replace(final_path)
+        with search_service.lifecycle_lock():
+            self._ensure_unique_name(name)
+            temp_path.replace(final_path)
 
-        snapshot = search_service.snapshot()
-        swapped = False
-        try:
-            record = DatasetRecord(
-                name=name,
-                original_filename=original_filename,
-                stored_path=final_relative.as_posix(),
-                file_format=suffix[1:],
-                source_type=source_type,
-                use_obsm=use_obsm if suffix == ".h5ad" else None,
-                n_cells=dataset.n_cells,
-                dim=dataset.dim,
-                metadata_fields=sorted(dataset.obs.keys()),
-                fingerprint=fingerprint,
-                owner_id=owner_id,
-                is_active=False,
-            )
-            db.session.add(record)
-            db.session.flush()
-            self._attach_record(dataset, record)
-            status = None
-            if activate:
-                status = search_service.set_dataset(dataset, index_type="flat", metric="l2")
-                swapped = True
-                self._mark_active(record)
-            db.session.commit()
-        except IntegrityError as exc:
-            db.session.rollback()
-            if swapped:
-                search_service.restore(snapshot)
-            final_path.unlink(missing_ok=True)
-            raise DatasetConflictError("数据集名称已存在") from exc
-        except Exception:
-            db.session.rollback()
-            if swapped:
-                search_service.restore(snapshot)
-            final_path.unlink(missing_ok=True)
-            raise
-        return {"dataset": record.to_dict(active=activate), "status": status}
+            snapshot = search_service.snapshot()
+            swapped = False
+            try:
+                record = DatasetRecord(
+                    name=name,
+                    original_filename=original_filename,
+                    stored_path=final_relative.as_posix(),
+                    file_format=suffix[1:],
+                    source_type=source_type,
+                    use_obsm=representation,
+                    n_cells=dataset.n_cells,
+                    dim=dataset.dim,
+                    metadata_fields=sorted(dataset.obs.keys()),
+                    fingerprint=fingerprint,
+                    owner_id=owner_id,
+                    is_active=False,
+                )
+                db.session.add(record)
+                db.session.flush()
+                self._attach_record(dataset, record)
+                status = None
+                if activate:
+                    status = search_service.set_dataset(dataset, index_type="flat", metric="l2")
+                    swapped = True
+                    self._mark_active(record)
+                db.session.commit()
+            except IntegrityError as exc:
+                db.session.rollback()
+                if swapped:
+                    search_service.restore(snapshot)
+                final_path.unlink(missing_ok=True)
+                raise DatasetConflictError("数据集名称已存在") from exc
+            except Exception:
+                db.session.rollback()
+                if swapped:
+                    search_service.restore(snapshot)
+                final_path.unlink(missing_ok=True)
+                raise
+            return {"dataset": record.to_dict(active=activate), "status": status}
 
     def _load_record(self, record: DatasetRecord):
         path = self._record_path(record)
         if not path.is_file():
             raise ValueError("数据集文件不存在")
-        if file_sha256(str(path)) != record.fingerprint:
-            raise ValueError("数据集文件指纹不匹配，可能已被修改")
+        source_fingerprint = file_sha256(str(path))
         dataset = load_dataset_file(str(path), use_obsm=record.use_obsm)
+        semantic_fingerprint = semantic_dataset_fingerprint(
+            dataset,
+            source_fingerprint,
+            record.use_obsm if record.file_format == "h5ad" else None,
+        )
+        # Pre-v2 development records used the source-file hash directly.
+        if record.fingerprint not in {source_fingerprint, semantic_fingerprint}:
+            raise ValueError("数据集文件指纹不匹配，可能已被修改")
         self._attach_record(dataset, record)
         return dataset
 

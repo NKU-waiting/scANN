@@ -1,5 +1,7 @@
 """用户注册 / 登录 / 管理员用户管理 API。"""
-from datetime import datetime, timedelta, timezone
+
+import threading
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from flask import Blueprint, current_app, g, jsonify, request
@@ -10,13 +12,19 @@ from app.core.security import require_admin, require_auth
 from app.models import User
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+_user_management_lock = threading.RLock()
 
 
 @bp.post("/register")
 def register():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error="请求体必须是 JSON 对象"), 400
+    username = data.get("username", "")
+    password = data.get("password", "")
+    if not isinstance(username, str) or not isinstance(password, str):
+        return jsonify(error="用户名和密码必须是字符串"), 400
+    username = username.strip()
 
     if not username or not password:
         return jsonify(error="用户名和密码不能为空"), 400
@@ -32,6 +40,15 @@ def register():
     user.set_password(password)
     try:
         db.session.add(user)
+        db.session.flush()
+
+        # Old development databases may have been created without SQLite
+        # AUTOINCREMENT. Remove any orphan rows before a reused numeric id can
+        # expose a deleted account's history to this newly created identity.
+        from app.models import EvaluationLog, QueryLog
+
+        QueryLog.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+        EvaluationLog.query.filter_by(user_id=user.id).delete(synchronize_session=False)
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -41,9 +58,14 @@ def register():
 
 @bp.post("/login")
 def login():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error="请求体必须是 JSON 对象"), 400
+    username = data.get("username", "")
+    password = data.get("password", "")
+    if not isinstance(username, str) or not isinstance(password, str):
+        return jsonify(error="用户名和密码必须是字符串"), 400
+    username = username.strip()
 
     if not username or not password:
         return jsonify(error="用户名和密码不能为空"), 400
@@ -56,9 +78,10 @@ def login():
         "sub": str(user.id),
         "username": user.username,
         "role": user.role,
+        "ver": user.token_version(),
         "iss": "scann",
-        "iat": datetime.now(tz=timezone.utc),
-        "exp": datetime.now(tz=timezone.utc) + timedelta(hours=24),
+        "iat": datetime.now(tz=UTC),
+        "exp": datetime.now(tz=UTC) + timedelta(hours=24),
     }
     token = jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
     return jsonify(token=token, user=user.to_dict())
@@ -80,13 +103,22 @@ def list_users():
 @bp.delete("/users/<int:user_id>")
 @require_admin
 def delete_user(user_id):
-    user = db.session.get(User, user_id)
-    if user is None:
-        return jsonify(error="用户不存在"), 404
-    if user.id == g.current_user.id:
-        return jsonify(error="不能删除当前登录的管理员"), 400
-    if user.role == "admin" and User.query.filter_by(role="admin").count() <= 1:
-        return jsonify(error="不能删除最后一个管理员"), 400
-    db.session.delete(user)
-    db.session.commit()
-    return jsonify(message="删除成功")
+    with _user_management_lock:
+        user = db.session.get(User, user_id)
+        if user is None:
+            return jsonify(error="用户不存在"), 404
+        if user.id == g.current_user.id:
+            return jsonify(error="不能删除当前登录的管理员"), 400
+        if user.role == "admin" and User.query.filter_by(role="admin").count() <= 1:
+            return jsonify(error="不能删除最后一个管理员"), 400
+        from app.models import EvaluationLog, QueryLog
+
+        try:
+            QueryLog.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+            EvaluationLog.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+            db.session.delete(user)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+        return jsonify(message="删除成功")

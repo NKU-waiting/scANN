@@ -1,4 +1,5 @@
 """Reproducible ANN evaluation against an exact Flat ground truth."""
+
 from __future__ import annotations
 
 import time
@@ -46,9 +47,7 @@ def evaluate_index(
         ground_truth = _neighbors_without_self(
             ground_truth_ids[row].tolist(), int(query_id), effective_k
         )
-        predicted = _neighbors_without_self(
-            predicted_ids[0].tolist(), int(query_id), effective_k
-        )
+        predicted = _neighbors_without_self(predicted_ids[0].tolist(), int(query_id), effective_k)
         recalls.append(len(set(ground_truth) & set(predicted)) / len(ground_truth))
 
     return {

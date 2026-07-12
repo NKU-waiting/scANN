@@ -1,7 +1,9 @@
 """JWT authentication backed by the current database user record."""
+
 from __future__ import annotations
 
 import functools
+import hmac
 
 import jwt
 from flask import current_app, g, jsonify, request
@@ -18,7 +20,7 @@ def _load_current_user():
             current_app.config["SECRET_KEY"],
             algorithms=["HS256"],
             issuer="scann",
-            options={"require": ["exp", "iat", "iss", "sub"]},
+            options={"require": ["exp", "iat", "iss", "sub", "ver"]},
         )
         user_id = int(payload["sub"])
     except jwt.ExpiredSignatureError:
@@ -32,6 +34,8 @@ def _load_current_user():
     user = db.session.get(User, user_id)
     if user is None:
         return None, (jsonify(error="用户不存在或登录已失效"), 401)
+    if not hmac.compare_digest(str(payload["ver"]), user.token_version()):
+        return None, (jsonify(error="用户身份已变更，请重新登录"), 401)
     return user, None
 
 

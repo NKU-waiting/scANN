@@ -25,11 +25,25 @@ Install and run the frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
 Use `npm run build` to validate the production build, and `npm run preview` to inspect it locally. The frontend proxies `/api` to Flask.
+
+Run quality gates before committing:
+
+```bash
+cd backend
+ruff check .
+ruff format --check .
+PYTHONDONTWRITEBYTECODE=1 pytest -q -p no:cacheprovider
+
+cd ../frontend
+npm run lint
+npm test
+npm run build
+```
 
 ## Coding Style & Naming Conventions
 
@@ -37,11 +51,24 @@ Follow PEP 8 for Python: 4-space indentation, `snake_case` functions/modules, an
 
 ## Testing Guidelines
 
-No automated test suite is currently checked in. When adding tests, place backend tests under `backend/tests/` with `test_*.py` filenames and prefer Flask test-client coverage for API routes plus service tests for indexes/search. Add frontend tests only after adding the required tooling. Until test scripts exist, run `npm run build` and verify the backend health/search endpoints manually.
+Backend tests live under `backend/tests/` with `test_*.py` filenames and use Flask test clients plus service-level index/search tests. File lifecycle tests must use pytest temporary directories and must not retain uploaded samples, databases, indexes, logs, or results. Frontend tests use Vitest/jsdom in `frontend/src/**/*.test.js`. Keep permanent regression tests in Git, but remove temporary smoke scripts and outputs after validation.
 
 ## Commit & Pull Request Guidelines
 
 Use the project commit pattern `<action>: <message>`, for example `fix: handle empty search results` or `doc: update setup notes`. Prefer actions such as `update`, `fix`, `delete`, and `doc`. Pull requests should include a summary, commands run, linked issues or checklist items, and screenshots for frontend UI changes. Note dependency or data-format changes explicitly. Better let each commit not only contain a message, but also a corresponding detailed description.
+
+Every commit body must contain:
+
+```text
+Changes:
+- <main changes>
+
+Verification:
+- <commands and results>
+
+Scope:
+- <affected areas and limitations>
+```
 
 ## Security & Configuration Tips
 

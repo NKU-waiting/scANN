@@ -1,4 +1,5 @@
 """Unit tests for exact and FAISS index contracts."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -20,7 +21,7 @@ def test_flat_cosine_distance_normalizes_vectors():
 
 
 @pytest.mark.parametrize("index_type", ["flat", "faiss", "ivf", "hnsw", "pq"])
-@pytest.mark.parametrize("metric", ["l2", "cosine"])
+@pytest.mark.parametrize("metric", ["l2", "cosine", "ip"])
 def test_all_index_variants_return_valid_ranked_results(index_type, metric):
     rng = np.random.default_rng(7)
     vectors = rng.normal(size=(640, 16)).astype(np.float32)
@@ -31,9 +32,12 @@ def test_all_index_variants_return_valid_ranked_results(index_type, metric):
 
     assert ids.shape == (1, 10)
     assert values.shape == (1, 10)
-    assert ids[0, 0] == 0
     assert np.isfinite(values).all()
-    assert np.all(values[0, 1:] >= values[0, :-1] - 1e-6)
+    if metric == "ip":
+        assert np.all(values[0, 1:] <= values[0, :-1] + 1e-6)
+    else:
+        assert ids[0, 0] == 0
+        assert np.all(values[0, 1:] >= values[0, :-1] - 1e-6)
 
 
 @pytest.mark.parametrize("metric", ["", "euclidean", "manhattan", None])

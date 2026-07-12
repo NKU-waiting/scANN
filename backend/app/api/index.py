@@ -3,6 +3,7 @@
 POST /api/index/build   {"index_type": "faiss", "metric": "l2"}
 GET  /api/index/status
 """
+
 from flask import Blueprint, g, jsonify, request
 
 from app.core.security import require_admin, require_auth

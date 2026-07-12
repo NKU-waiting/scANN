@@ -1,5 +1,7 @@
 """User 数据模型。"""
-from datetime import datetime, timezone
+
+import hashlib
+from datetime import UTC, datetime
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -8,6 +10,7 @@ from app.core.extensions import db
 
 class User(db.Model):
     __tablename__ = "users"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False, index=True)
@@ -16,7 +19,7 @@ class User(db.Model):
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     def set_password(self, password: str) -> None:
@@ -24,6 +27,10 @@ class User(db.Model):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    def token_version(self) -> str:
+        """Return an opaque login epoch that changes for every password hash."""
+        return hashlib.sha256(self.password_hash.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict:
         return {

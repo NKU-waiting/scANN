@@ -1,4 +1,5 @@
 """Regression tests for dataset-bound persisted ANN index artifacts."""
+
 from __future__ import annotations
 
 import json
@@ -59,6 +60,17 @@ def _npy_upload(rows: int = 24, dim: int = 6):
     np.save(stream, np.arange(rows * dim, dtype=np.float32).reshape(rows, dim))
     stream.seek(0)
     return stream, "managed.npy"
+
+
+def _h5ad_with_two_representations(tmp_path) -> bytes:
+    ad = pytest.importorskip("anndata")
+    path = tmp_path / "representations.h5ad"
+    adata = ad.AnnData(X=np.zeros((4, 2), dtype=np.float32))
+    adata.obs_names = ["q", "a-neighbor", "b-neighbor", "far"]
+    adata.obsm["A"] = np.asarray([[0, 0], [1, 0], [5, 0], [20, 0]], dtype=np.float32)
+    adata.obsm["B"] = np.asarray([[0, 0], [5, 0], [1, 0], [20, 0]], dtype=np.float32)
+    adata.write_h5ad(path)
+    return path.read_bytes()
 
 
 def test_flat_index_round_trip_has_verified_relative_manifest(client, app_config):
@@ -161,6 +173,57 @@ def test_index_cannot_load_for_a_different_dataset(client):
     assert uploaded.status_code == 201
     assert loaded.status_code == 409
     assert "不匹配" in loaded.get_json()["error"]
+
+
+def test_same_h5ad_file_with_different_obsm_cannot_share_index(client, tmp_path):
+    headers = _headers(client)
+    payload = _h5ad_with_two_representations(tmp_path)
+    first = client.post(
+        "/api/datasets/upload",
+        data={
+            "name": "representation-a",
+            "use_obsm": "A",
+            "file": (BytesIO(payload), "representations.h5ad"),
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["dataset"]
+    artifact = client.post(
+        "/api/index/save",
+        json={"name": "representation-a-index"},
+        headers=headers,
+    ).get_json()["artifact"]
+    second = client.post(
+        "/api/datasets/upload",
+        data={
+            "name": "representation-b",
+            "use_obsm": "B",
+            "file": (BytesIO(payload), "representations.h5ad"),
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["dataset"]
+
+    before = client.post(
+        "/api/search",
+        json={"cell_id": 0, "top_k": 1},
+        headers=headers,
+    ).get_json()
+    loaded = client.post(
+        "/api/index/load",
+        json={"index_id": artifact["id"]},
+        headers=headers,
+    )
+    after = client.post(
+        "/api/search",
+        json={"cell_id": 0, "top_k": 1},
+        headers=headers,
+    ).get_json()
+
+    assert first["fingerprint"] != second["fingerprint"]
+    assert before["results"][0]["cell_id"] == 2
+    assert loaded.status_code == 409
+    assert after["results"][0]["cell_id"] == 2
 
 
 def test_corrupt_artifact_is_rejected_without_replacing_active_index(client, app_config):

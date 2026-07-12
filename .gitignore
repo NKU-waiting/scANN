@@ -24,6 +24,7 @@ logs/
 # ---- 数据与索引产物（体积大，不入库）----
 data/*
 !data/.gitkeep
+!data/README.md
 *.h5ad
 *.index
 *.faiss
@@ -49,3 +50,5 @@ pnpm-debug.log*
 .pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
+.cache/

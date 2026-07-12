@@ -1,12 +1,16 @@
-"""scANN 后端入口。
+"""scANN backend entrypoint with optional local ``.env`` loading."""
 
-运行：
-    python run.py
-默认监听 http://127.0.0.1:5000
-"""
-from app import create_app
+from dotenv import load_dotenv
 
-app = create_app()
+
+def build_app():
+    load_dotenv()
+    from app import create_app
+
+    return create_app()
+
+
+app = build_app()
 
 if __name__ == "__main__":
     app.run(

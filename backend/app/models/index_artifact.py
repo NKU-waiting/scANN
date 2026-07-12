@@ -1,7 +1,8 @@
 """Metadata for dataset-bound persisted ANN index artifacts."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.extensions import db
 
@@ -35,7 +36,7 @@ class IndexArtifact(db.Model):
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     def to_dict(self, active: bool = False, compatible: bool = False) -> dict:

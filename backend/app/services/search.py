@@ -1,4 +1,5 @@
 """Thread-safe retrieval service for the active dataset and index."""
+
 from __future__ import annotations
 
 import threading
@@ -126,6 +127,11 @@ class SearchService:
             "persisted": self.index_record_id is not None,
             "metric": self.metric,
             "metadata_fields": sorted(self.dataset.obs.keys()) if self.dataset else [],
+            "limits": {
+                "max_top_k": self._config("MAX_TOP_K"),
+                "max_eval_queries": self._config("MAX_EVAL_QUERIES"),
+                "max_visualization_points": self._config("MAX_VISUALIZATION_POINTS"),
+            },
             "ready": self.index is not None,
         }
 
@@ -135,12 +141,16 @@ class SearchService:
         index_type: str,
         metric: str,
         record_id: int,
+        dataset_id: int | None,
         dataset_fingerprint: str,
     ) -> dict:
         """Atomically install a validated persisted index for the active dataset."""
         with self._lock:
             self.ensure_dataset()
-            if self.dataset.fingerprint != dataset_fingerprint:
+            if (
+                self.dataset.record_id != dataset_id
+                or self.dataset.fingerprint != dataset_fingerprint
+            ):
                 raise ValueError("索引与当前数据集不匹配")
             if index.dim != self.dataset.dim or index.n_items != self.dataset.n_cells:
                 raise ValueError("索引规模或维度与当前数据集不匹配")
@@ -159,6 +169,10 @@ class SearchService:
     def locked_state(self):
         """Expose the active immutable references while holding the service lock."""
         return _LockedSearchState(self)
+
+    def lifecycle_lock(self):
+        """Serialize resource checks, commits, and in-memory publication."""
+        return self._lock
 
     # ---- retrieval ----
     def search_by_cell(
@@ -263,9 +277,7 @@ class SearchService:
         if types is None:
             raise ValueError("当前数据集不包含 cell_type 元数据")
         eligible = [
-            idx
-            for idx, value in enumerate(types)
-            if value == cell_type and idx not in exclude
+            idx for idx, value in enumerate(types) if value == cell_type and idx not in exclude
         ]
         if not eligible:
             return [], []
@@ -309,13 +321,17 @@ class _LockedSearchState:
 
     def __enter__(self):
         self.service._lock.acquire()
-        self.service.ensure_ready()
-        return (
-            self.service.dataset,
-            self.service.index,
-            self.service.index_type,
-            self.service.metric,
-        )
+        try:
+            self.service.ensure_ready()
+            return (
+                self.service.dataset,
+                self.service.index,
+                self.service.index_type,
+                self.service.metric,
+            )
+        except Exception:
+            self.service._lock.release()
+            raise
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.service._lock.release()

@@ -2,6 +2,7 @@
 
 通过环境变量覆盖，便于区分开发 / 生产。
 """
+
 import os
 import tempfile
 from pathlib import Path
@@ -15,6 +16,8 @@ INDEX_DIR = BASE_DIR / "indices"
 LOG_DIR = BASE_DIR / "logs"
 
 DEVELOPMENT_SECRET = "scann-development-secret-key-change-before-production"
+EXAMPLE_SECRET = "replace-with-at-least-32-random-characters"
+EXAMPLE_ADMIN_PASSWORD = "replace-with-a-strong-bootstrap-password"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -55,10 +58,7 @@ class Config:
     DEMO_DIM = int(os.environ.get("SCANN_DEMO_DIM", 50))
 
     # SQLite 数据库
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "SCANN_DB_URI",
-        f"sqlite:///{BASE_DIR / 'scann.db'}"
-    )
+    SQLALCHEMY_DATABASE_URI = os.environ.get("SCANN_DB_URI", f"sqlite:///{BASE_DIR / 'scann.db'}")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # 默认检索参数
@@ -67,11 +67,12 @@ class Config:
     DEFAULT_TOP_K = 10
     MAX_TOP_K = int(os.environ.get("SCANN_MAX_TOP_K", 1000))
     MAX_EVAL_QUERIES = int(os.environ.get("SCANN_MAX_EVAL_QUERIES", 1000))
-    MAX_VISUALIZATION_POINTS = int(
-        os.environ.get("SCANN_MAX_VISUALIZATION_POINTS", 3000)
-    )
+    MAX_VISUALIZATION_POINTS = int(os.environ.get("SCANN_MAX_VISUALIZATION_POINTS", 3000))
     NUMBA_CACHE_DIR = os.environ.get(
         "SCANN_NUMBA_CACHE_DIR",
-        str(Path(tempfile.gettempdir()) / "scann-numba-cache"),
+        str(
+            Path(tempfile.gettempdir())
+            / f"scann-numba-cache-{getattr(os, 'getuid', lambda: 'default')()}"
+        ),
     )
     NUMBA_NUM_THREADS = int(os.environ.get("SCANN_NUMBA_NUM_THREADS", 1))

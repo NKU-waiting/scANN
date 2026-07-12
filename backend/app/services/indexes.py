@@ -1,4 +1,5 @@
 """Dataset-bound ANN index persistence with verified manifests."""
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,6 @@ from app.models import IndexArtifact
 from app.services.data_loader import file_sha256
 from app.services.index import create_index
 from app.services.search import search_service
-
 
 MANIFEST_SCHEMA_VERSION = 1
 
@@ -40,19 +40,23 @@ class IncompatibleIndexError(ValueError):
 
 class IndexArtifactService:
     def list_artifacts(self, dataset_id: int | None = None) -> list[dict]:
-        search_service.ensure_initialized()
-        query = IndexArtifact.query
-        if dataset_id is not None:
-            query = query.filter_by(dataset_id=dataset_id)
-        records = query.order_by(IndexArtifact.created_at, IndexArtifact.id).all()
-        active_fingerprint = search_service.dataset.fingerprint
-        return [
-            record.to_dict(
-                active=record.id == search_service.index_record_id,
-                compatible=record.dataset_fingerprint == active_fingerprint,
-            )
-            for record in records
-        ]
+        with search_service.lifecycle_lock():
+            search_service.ensure_initialized()
+            query = IndexArtifact.query
+            if dataset_id is not None:
+                query = query.filter_by(dataset_id=dataset_id)
+            records = query.order_by(IndexArtifact.created_at, IndexArtifact.id).all()
+            active_dataset = search_service.dataset
+            return [
+                record.to_dict(
+                    active=record.id == search_service.index_record_id,
+                    compatible=(
+                        record.dataset_id == active_dataset.record_id
+                        and record.dataset_fingerprint == active_dataset.fingerprint
+                    ),
+                )
+                for record in records
+            ]
 
     def save_current(self, name: str | None, owner_id: int) -> dict:
         with search_service.locked_state() as state:
@@ -137,58 +141,64 @@ class IndexArtifactService:
         }
 
     def load(self, artifact_id: int) -> dict:
-        record = db.session.get(IndexArtifact, artifact_id)
-        if record is None:
-            raise IndexNotFoundError("索引不存在")
-        search_service.ensure_initialized()
-        dataset = search_service.dataset
-        if record.dataset_fingerprint != dataset.fingerprint:
-            raise IncompatibleIndexError("索引与当前数据集不匹配")
+        with search_service.lifecycle_lock():
+            record = db.session.get(IndexArtifact, artifact_id)
+            if record is None:
+                raise IndexNotFoundError("索引不存在")
+            search_service.ensure_initialized()
+            dataset = search_service.dataset
+            if (
+                record.dataset_id != dataset.record_id
+                or record.dataset_fingerprint != dataset.fingerprint
+            ):
+                raise IncompatibleIndexError("索引与当前数据集不匹配")
 
-        artifact_path = self._record_artifact_path(record)
-        manifest_path = self._record_manifest_path(record)
-        manifest = self._validate_files(record, artifact_path, manifest_path)
-        candidate = create_index(record.index_type, record.dim, record.metric)
-        candidate.load(str(artifact_path))
-        if candidate.n_items != record.n_items:
-            raise IncompatibleIndexError("索引条目数与清单不一致")
-        status = search_service.install_index(
-            candidate,
-            record.index_type,
-            record.metric,
-            record.id,
-            record.dataset_fingerprint,
-        )
-        return {
-            "artifact": record.to_dict(active=True, compatible=True),
-            "manifest": manifest,
-            "status": status,
-        }
+            artifact_path = self._record_artifact_path(record)
+            manifest_path = self._record_manifest_path(record)
+            manifest = self._validate_files(record, artifact_path, manifest_path)
+            candidate = create_index(record.index_type, record.dim, record.metric)
+            candidate.load(str(artifact_path))
+            if candidate.n_items != record.n_items:
+                raise IncompatibleIndexError("索引条目数与清单不一致")
+            status = search_service.install_index(
+                candidate,
+                record.index_type,
+                record.metric,
+                record.id,
+                record.dataset_id,
+                record.dataset_fingerprint,
+            )
+            return {
+                "artifact": record.to_dict(active=True, compatible=True),
+                "manifest": manifest,
+                "status": status,
+            }
 
     def delete(self, artifact_id: int) -> dict:
-        record = db.session.get(IndexArtifact, artifact_id)
-        if record is None:
-            raise IndexNotFoundError("索引不存在")
-        if record.id == search_service.index_record_id:
-            raise ActiveIndexError("不能删除当前加载的索引，请先构建或加载其他索引")
-        cleanup = self._stage_cleanup([record])
-        try:
-            name = record.name
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            cleanup.restore()
-            raise
-        cleanup.finalize()
-        return {"message": "索引已删除", "id": artifact_id, "name": name}
+        with search_service.lifecycle_lock():
+            record = db.session.get(IndexArtifact, artifact_id)
+            if record is None:
+                raise IndexNotFoundError("索引不存在")
+            if record.id == search_service.index_record_id:
+                raise ActiveIndexError("不能删除当前加载的索引，请先构建或加载其他索引")
+            cleanup = self._stage_cleanup([record])
+            try:
+                name = record.name
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                cleanup.restore()
+                raise
+            cleanup.finalize()
+            return {"message": "索引已删除", "id": artifact_id, "name": name}
 
-    def prepare_dataset_cleanup(self, dataset_id: int) -> "ArtifactCleanup":
+    def prepare_dataset_cleanup(self, dataset_id: int) -> ArtifactCleanup:
         records = IndexArtifact.query.filter_by(dataset_id=dataset_id).all()
         if any(record.id == search_service.index_record_id for record in records):
             raise ActiveIndexError("数据集仍有关联的活动索引")
         return self._stage_cleanup(records)
 
-    def _stage_cleanup(self, records: list[IndexArtifact]) -> "ArtifactCleanup":
+    def _stage_cleanup(self, records: list[IndexArtifact]) -> ArtifactCleanup:
         moved: list[tuple[Path, Path]] = []
         try:
             for record in records:
@@ -197,9 +207,7 @@ class IndexArtifactService:
                     self._record_manifest_path(record),
                 ):
                     if source.exists():
-                        tombstone = source.with_name(
-                            f".{source.name}.{uuid.uuid4().hex}.deleting"
-                        )
+                        tombstone = source.with_name(f".{source.name}.{uuid.uuid4().hex}.deleting")
                         source.replace(tombstone)
                         moved.append((source, tombstone))
                 db.session.delete(record)

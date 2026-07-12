@@ -1,4 +1,5 @@
 """Authenticated query and evaluation history APIs."""
+
 from __future__ import annotations
 
 from flask import Blueprint, g, jsonify, request

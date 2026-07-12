@@ -1,4 +1,5 @@
 """Lightweight API tests for /api/auth endpoints."""
+
 from __future__ import annotations
 
 import sys
@@ -10,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from app.core.config import Config
+from app.core.extensions import db
+from app.models import User
 
 
 class TestConfig(Config):
@@ -28,6 +31,7 @@ def client():
 # ---------------------------------------------------------------------------
 # 注册
 # ---------------------------------------------------------------------------
+
 
 def test_register_success(client):
     resp = client.post("/api/auth/register", json={"username": "alice", "password": "pass123"})
@@ -49,6 +53,23 @@ def test_register_missing_fields(client):
     assert resp.status_code == 400
 
 
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("/api/auth/register", []),
+        ("/api/auth/login", ["alice", "pass123"]),
+        ("/api/auth/register", {"username": 123, "password": "pass123"}),
+        ("/api/auth/register", {"username": "alice", "password": 123456}),
+        ("/api/auth/login", {"username": 123, "password": "pass123"}),
+    ],
+)
+def test_auth_rejects_non_object_or_non_string_credentials(client, path, payload):
+    response = client.post(path, json=payload)
+
+    assert response.status_code == 400
+    assert "error" in response.get_json()
+
+
 def test_register_short_password(client):
     resp = client.post("/api/auth/register", json={"username": "dave", "password": "123"})
     assert resp.status_code == 400
@@ -57,6 +78,7 @@ def test_register_short_password(client):
 # ---------------------------------------------------------------------------
 # 登录
 # ---------------------------------------------------------------------------
+
 
 def test_login_success(client):
     client.post("/api/auth/register", json={"username": "alice", "password": "pass123"})
@@ -88,6 +110,7 @@ def test_login_missing_fields(client):
 # 鉴权失败
 # ---------------------------------------------------------------------------
 
+
 def test_protected_route_no_token(client):
     resp = client.get("/api/auth/users")
     assert resp.status_code == 401
@@ -106,6 +129,7 @@ def test_protected_route_malformed_header(client):
 # ---------------------------------------------------------------------------
 # admin 权限校验
 # ---------------------------------------------------------------------------
+
 
 def _admin_token(client) -> str:
     resp = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
@@ -155,6 +179,44 @@ def test_admin_can_delete_user(client):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 200
+
+
+def test_deleted_user_token_cannot_resurrect_when_numeric_id_is_reused(client):
+    registered = client.post(
+        "/api/auth/register",
+        json={"username": "old_user", "password": "pass123"},
+    ).get_json()["user"]
+    old_token = _user_token(client, "second_user")
+    # Use old_user's token rather than creating it twice through the helper.
+    old_login = client.post(
+        "/api/auth/login",
+        json={"username": "old_user", "password": "pass123"},
+    ).get_json()["token"]
+    admin_token = _admin_token(client)
+    deleted = client.delete(
+        f"/api/auth/users/{registered['id']}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert deleted.status_code == 200
+
+    # Explicitly emulate an existing legacy SQLite table that can reuse ids.
+    with client.application.app_context():
+        replacement = User(id=registered["id"], username="replacement", role="user")
+        replacement.set_password("pass123")
+        db.session.add(replacement)
+        db.session.commit()
+
+    stale = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {old_login}"},
+    )
+    unrelated = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {old_token}"},
+    )
+
+    assert stale.status_code == 401
+    assert unrelated.status_code == 200
 
 
 def test_non_admin_cannot_delete_user(client):

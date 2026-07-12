@@ -1,12 +1,13 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiRequest } from '../api'
 
 const props = defineProps({
   status: { type: Object, default: null },
   isAdmin: { type: Boolean, default: false },
+  disabled: { type: Boolean, default: false },
 })
-const emit = defineEmits(['changed'])
+const emit = defineEmits(['changed', 'busy'])
 
 const datasets = ref([])
 const loading = ref(false)
@@ -16,6 +17,7 @@ const uploadName = ref('')
 const useObsm = ref('X_pca')
 const selectedFile = ref(null)
 const fileInput = ref(null)
+const localBusy = computed(() => loading.value || Boolean(action.value))
 
 async function reload() {
   loading.value = true
@@ -100,6 +102,7 @@ function formatDate(value) {
 }
 
 watch(() => props.status?.dataset_fingerprint, reload)
+watch(localBusy, value => emit('busy', value), { immediate: true })
 onMounted(reload)
 </script>
 
@@ -110,7 +113,7 @@ onMounted(reload)
         <h2 id="dataset-manager-title">数据集管理</h2>
         <p>上传、切换并管理经过校验的单细胞向量数据。</p>
       </div>
-      <button class="secondary" :disabled="loading" @click="reload">
+      <button class="secondary" :disabled="disabled || localBusy" @click="reload">
         {{ loading ? '刷新中…' : '刷新' }}
       </button>
     </div>
@@ -118,17 +121,17 @@ onMounted(reload)
     <div class="upload-grid">
       <label>
         <span>数据文件</span>
-        <input ref="fileInput" type="file" accept=".h5ad,.npy,.csv" @change="pickFile" />
+        <input ref="fileInput" type="file" accept=".h5ad,.npy,.csv" :disabled="disabled || localBusy" @change="pickFile" />
       </label>
       <label>
         <span>数据集名称</span>
-        <input v-model.trim="uploadName" maxlength="100" placeholder="默认使用文件名" />
+        <input v-model.trim="uploadName" maxlength="100" :disabled="disabled || localBusy" placeholder="默认使用文件名" />
       </label>
       <label>
         <span>AnnData 向量字段</span>
-        <input v-model.trim="useObsm" maxlength="100" placeholder="X_pca；填 X 使用表达矩阵" />
+        <input v-model.trim="useObsm" maxlength="100" :disabled="disabled || localBusy" placeholder="X_pca；填 X 使用表达矩阵" />
       </label>
-      <button class="primary" :disabled="Boolean(action)" @click="upload">
+      <button class="primary" :disabled="disabled || localBusy" @click="upload">
         {{ action === 'upload' ? '校验并上传中…' : '上传并激活' }}
       </button>
     </div>
@@ -150,13 +153,13 @@ onMounted(reload)
             <td class="actions">
               <button
                 class="secondary"
-                :disabled="dataset.active || Boolean(action)"
+                :disabled="disabled || dataset.active || localBusy"
                 @click="activate(dataset)"
               >切换</button>
               <button
                 v-if="isAdmin && dataset.id !== null"
                 class="danger"
-                :disabled="!dataset.deletable || Boolean(action)"
+                :disabled="disabled || !dataset.deletable || localBusy"
                 @click="remove(dataset)"
               >删除</button>
             </td>

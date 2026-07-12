@@ -2,6 +2,7 @@
 
 作为基线与 FAISS 不可用时的回退实现，无第三方依赖，保证最小流程始终可跑通。
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -39,9 +40,9 @@ class FlatIndex(BaseIndex):
 
         # 默认 L2 平方距离
         dists = (
-            (q ** 2).sum(axis=1, keepdims=True)
+            (q**2).sum(axis=1, keepdims=True)
             - 2 * q @ self._vectors.T
-            + (self._vectors ** 2).sum(axis=1)
+            + (self._vectors**2).sum(axis=1)
         )
         np.maximum(dists, 0.0, out=dists)
         idx = np.argpartition(dists, top_k - 1, axis=1)[:, :top_k]

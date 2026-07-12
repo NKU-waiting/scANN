@@ -1,4 +1,5 @@
 """Authenticated 2D embedding endpoint for query-result visualization."""
+
 from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
@@ -13,8 +14,11 @@ bp = Blueprint("visualization", __name__, url_prefix="/api/visualization")
 @require_auth
 def embedding():
     try:
-        max_points = _parse_int(request.args.get("max_points", 1200), "max_points")
         configured_limit = current_app.config["MAX_VISUALIZATION_POINTS"]
+        max_points = _parse_int(
+            request.args.get("max_points", min(1200, configured_limit)),
+            "max_points",
+        )
         if not 10 <= max_points <= configured_limit:
             raise ValueError(f"max_points 必须在 10 到 {configured_limit} 之间")
         method = request.args.get("method", "umap").strip().lower()

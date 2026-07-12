@@ -24,10 +24,14 @@ const authMode = ref('login')
 const authForm = ref({ username: '', password: '' })
 const authLoading = ref(false)
 const authError = ref('')
+const sessionGeneration = ref(0)
+const workspaceGeneration = ref(0)
 
 configureApi({
   getToken: () => token.value,
-  onUnauthorized: () => doLogout(),
+  onUnauthorized: failedToken => {
+    if (failedToken === token.value) doLogout()
+  },
 })
 
 // ── 管理员用户管理 ────────────────────────────────────────
@@ -36,6 +40,8 @@ const userListLoading = ref(false)
 const userListError = ref('')
 
 async function doLogin() {
+  const attemptGeneration = sessionGeneration.value
+  let authenticatedGeneration = null
   authLoading.value = true
   authError.value = ''
   try {
@@ -43,17 +49,32 @@ async function doLogin() {
       method: 'POST',
       body: JSON.stringify({ username: authForm.value.username, password: authForm.value.password }),
     }, false)
+    if (attemptGeneration !== sessionGeneration.value) return
+    sessionGeneration.value += 1
+    authenticatedGeneration = sessionGeneration.value
+    workspaceGeneration.value += 1
+    resetWorkspaceState()
     token.value = data.token
     currentUser.value = data.user
     localStorage.setItem('scann_token', data.token)
     localStorage.setItem('scann_user', JSON.stringify(data.user))
     authForm.value = { username: '', password: '' }
-    await fetchStatus()
-    if (data.user.role === 'admin') await loadUsers()
+    const snapshot = captureWorkspace()
+    await fetchStatus(snapshot)
+    if (data.user.role === 'admin' && isWorkspaceCurrent(snapshot)) await loadUsers()
   } catch (e) {
-    authError.value = e.message
+    const ownsSession = authenticatedGeneration === null
+      ? attemptGeneration === sessionGeneration.value
+      : authenticatedGeneration === sessionGeneration.value
+    if (ownsSession) {
+      if (authenticatedGeneration === null) authError.value = e.message
+      else error.value = e.message
+    }
   } finally {
-    authLoading.value = false
+    const ownsSession = authenticatedGeneration === null
+      ? attemptGeneration === sessionGeneration.value
+      : authenticatedGeneration === sessionGeneration.value
+    if (ownsSession) authLoading.value = false
   }
 }
 
@@ -76,71 +97,132 @@ async function doRegister() {
 }
 
 function doLogout() {
+  sessionGeneration.value += 1
+  workspaceGeneration.value += 1
   token.value = ''
   currentUser.value = null
-  userList.value = []
-  status.value = null
-  result.value = null
-  comparisonResults.value = []
-  evalResults.value = []
+  resetWorkspaceState()
+  authLoading.value = false
+  authError.value = ''
+  authForm.value = { username: '', password: '' }
   localStorage.removeItem('scann_token')
   localStorage.removeItem('scann_user')
 }
 
 async function loadUsers() {
+  const generation = sessionGeneration.value
   userListLoading.value = true
   userListError.value = ''
   try {
     const data = await apiRequest('/api/auth/users')
-    userList.value = data.users
+    if (generation === sessionGeneration.value) userList.value = data.users
   } catch (e) {
-    userListError.value = e.message
+    if (generation === sessionGeneration.value) userListError.value = e.message
   } finally {
-    userListLoading.value = false
+    if (generation === sessionGeneration.value) userListLoading.value = false
   }
 }
 
 async function removeUser(userId) {
   if (!confirm('确定删除该用户？')) return
+  const generation = sessionGeneration.value
   try {
     await apiRequest(`/api/auth/users/${userId}`, {
       method: 'DELETE',
     })
-    await loadUsers()
+    if (generation === sessionGeneration.value) await loadUsers()
   } catch (e) {
-    userListError.value = e.message
+    if (generation === sessionGeneration.value) userListError.value = e.message
+  }
+}
+
+function defaultSearchForm() {
+  return {
+    cell_id: 0,
+    top_k: 5,
+    index_type: 'flat',
+    compare_index_type: 'hnsw',
+    metric: 'l2',
+    cell_type: '',
+    vector: '',
+  }
+}
+
+function defaultEvalForm() {
+  return {
+    index_types: ['flat', 'hnsw'],
+    top_k: 10,
+    n_queries: 100,
+    metric: 'l2',
   }
 }
 
 const status = ref(null)
-const form = ref({
-  cell_id: 0,
-  top_k: 5,
-  index_type: 'flat',
-  compare_index_type: 'hnsw',
-  metric: 'l2',
-  cell_type: '',
-  vector: '',
-})
+const form = ref(defaultSearchForm())
 const queryMode = ref('cell') // 'cell' | 'vector'
 const result = ref(null)
 const buildInfo = ref(null)
 const comparisonResults = ref([])
+const comparisonMeta = ref(null)
 const loading = ref(false)
 const building = ref(false)
 const comparing = ref(false)
 const error = ref('')
 
-const evalForm = ref({
-  index_types: ['flat', 'hnsw'],
-  top_k: 10,
-  n_queries: 100,
-  metric: 'l2',
-})
+const evalForm = ref(defaultEvalForm())
 const evalResults = ref([])
 const evalLoading = ref(false)
 const evalError = ref('')
 const historyRefreshKey = ref(0)
+const datasetManagerBusy = ref(false)
+const indexManagerBusy = ref(false)
+const resourceSyncing = ref(false)
+
+function resetWorkspaceState() {
+  userList.value = []
+  userListLoading.value = false
+  userListError.value = ''
+  status.value = null
+  form.value = defaultSearchForm()
+  queryMode.value = 'cell'
+  result.value = null
+  buildInfo.value = null
+  comparisonResults.value = []
+  comparisonMeta.value = null
+  loading.value = false
+  building.value = false
+  comparing.value = false
+  error.value = ''
+  evalForm.value = defaultEvalForm()
+  evalResults.value = []
+  evalLoading.value = false
+  evalError.value = ''
+  historyRefreshKey.value = 0
+  datasetManagerBusy.value = false
+  indexManagerBusy.value = false
+  resourceSyncing.value = false
+}
+
+function captureWorkspace() {
+  return {
+    session: sessionGeneration.value,
+    workspace: workspaceGeneration.value,
+    token: token.value,
+  }
+}
+
+function isWorkspaceCurrent(snapshot) {
+  return snapshot.session === sessionGeneration.value
+    && snapshot.workspace === workspaceGeneration.value
+    && snapshot.token === token.value
+    && Boolean(currentUser.value)
+}
+
+function applyStatus(nextStatus) {
+  status.value = nextStatus
+  if (nextStatus?.index_type) form.value.index_type = nextStatus.index_type
+  if (nextStatus?.metric) form.value.metric = nextStatus.metric
+}
 
 const indexLabels = {
   flat: 'Flat',
@@ -151,7 +233,20 @@ const indexLabels = {
 }
 
 const metadataFields = computed(() => status.value?.metadata_fields || [])
-const busy = computed(() => loading.value || building.value || comparing.value || evalLoading.value)
+const maxTopK = computed(() => status.value?.limits?.max_top_k || 50)
+const maxEvalQueries = computed(() => status.value?.limits?.max_eval_queries || 500)
+const maxVisualizationPoints = computed(
+  () => status.value?.limits?.max_visualization_points || 1200,
+)
+const busy = computed(() => (
+  loading.value
+  || building.value
+  || comparing.value
+  || evalLoading.value
+  || datasetManagerBusy.value
+  || indexManagerBusy.value
+  || resourceSyncing.value
+))
 
 const datasetSummary = computed(() => [
   { label: '数据集', value: status.value?.dataset || '未加载' },
@@ -174,10 +269,18 @@ const resultMetric = computed(() => {
 })
 
 const valueLabel = computed(() => {
-  if (resultMetric.value === 'ip') return '内积得分'
-  if (resultMetric.value === 'cosine') return '余弦距离'
-  return '平方 L2 距离'
+  return metricValueLabel(resultMetric.value)
 })
+
+const comparisonValueLabel = computed(() => (
+  metricValueLabel(comparisonMeta.value?.metric || resultMetric.value)
+))
+
+const evalEffectiveTopK = computed(() => (
+  evalResults.value[0]?.effective_top_k ?? evalResults.value[0]?.top_k ?? null
+))
+
+const evalRequestedTopK = computed(() => evalResults.value[0]?.top_k ?? null)
 
 const bestLabel = computed(() => resultMetric.value === 'ip' ? '最高得分' : '最近结果')
 
@@ -242,6 +345,12 @@ function indexLabel(indexType) {
   return indexLabels[indexType] || indexType
 }
 
+function metricValueLabel(metric) {
+  if (metric === 'ip') return '内积得分'
+  if (metric === 'cosine') return '余弦距离'
+  return '平方 L2 距离'
+}
+
 function parseVectorInput() {
   const parts = form.value.vector.split(',').map(value => value.trim())
   if (!parts.length || parts.some(value => value === '')) {
@@ -259,8 +368,8 @@ function parseVectorInput() {
 
 function buildSearchPayload(indexType = form.value.index_type) {
   const topK = Number(form.value.top_k)
-  if (!Number.isInteger(topK) || topK < 1 || topK > 50) {
-    throw new Error('Top-K 必须是 1 到 50 的整数')
+  if (!Number.isInteger(topK) || topK < 1 || topK > maxTopK.value) {
+    throw new Error(`Top-K 必须是 1 到 ${maxTopK.value} 的整数`)
   }
   const payload = {
     top_k: topK,
@@ -290,54 +399,73 @@ async function requestSearch(indexType, basePayload = null) {
   })
 }
 
-async function fetchStatus() {
-  status.value = await apiRequest('/api/index/status')
+async function fetchStatus(snapshot = captureWorkspace()) {
+  const nextStatus = await apiRequest('/api/index/status')
+  if (isWorkspaceCurrent(snapshot)) applyStatus(nextStatus)
+  return nextStatus
 }
 
 async function search() {
+  const snapshot = captureWorkspace()
   loading.value = true
   error.value = ''
   result.value = null
+  comparisonResults.value = []
+  comparisonMeta.value = null
   try {
-    result.value = await requestSearch(form.value.index_type)
+    const data = await requestSearch(form.value.index_type)
+    if (!isWorkspaceCurrent(snapshot)) return
+    result.value = data
     historyRefreshKey.value += 1
-    await fetchStatus()
+    await fetchStatus(snapshot)
   } catch (e) {
-    error.value = e.message
+    if (isWorkspaceCurrent(snapshot)) error.value = e.message
   } finally {
-    loading.value = false
+    if (isWorkspaceCurrent(snapshot)) loading.value = false
   }
 }
 
 async function buildIndex() {
+  const snapshot = captureWorkspace()
   building.value = true
   error.value = ''
+  comparisonResults.value = []
+  comparisonMeta.value = null
   try {
     const data = await apiRequest('/api/index/build', {
       method: 'POST',
       body: JSON.stringify({ index_type: form.value.index_type, metric: form.value.metric }),
     })
+    if (!isWorkspaceCurrent(snapshot)) return
     buildInfo.value = data
-    await fetchStatus()
+    await fetchStatus(snapshot)
   } catch (e) {
-    error.value = e.message
+    if (isWorkspaceCurrent(snapshot)) error.value = e.message
   } finally {
-    building.value = false
+    if (isWorkspaceCurrent(snapshot)) building.value = false
   }
 }
 
 async function compareIndexes() {
+  const snapshot = captureWorkspace()
   comparing.value = true
   error.value = ''
-    comparisonResults.value = []
+  comparisonResults.value = []
+  comparisonMeta.value = null
   const indexTypes = ['flat']
   if (form.value.compare_index_type !== 'flat') indexTypes.push(form.value.compare_index_type)
 
   try {
     const payloadSnapshot = buildSearchPayload()
+    comparisonMeta.value = {
+      target: form.value.compare_index_type,
+      metric: payloadSnapshot.metric,
+      topK: payloadSnapshot.top_k,
+    }
     for (const indexType of indexTypes) {
       try {
         const data = await requestSearch(indexType, payloadSnapshot)
+        if (!isWorkspaceCurrent(snapshot)) return
         const first = data.results?.[0]
         comparisonResults.value = [
           ...comparisonResults.value,
@@ -354,6 +482,7 @@ async function compareIndexes() {
         ]
         result.value = data
       } catch (e) {
+        if (!isWorkspaceCurrent(snapshot)) return
         comparisonResults.value = [
           ...comparisonResults.value,
           {
@@ -366,21 +495,28 @@ async function compareIndexes() {
       }
     }
     historyRefreshKey.value += 1
-    await fetchStatus()
+    await fetchStatus(snapshot)
+  } catch (e) {
+    if (isWorkspaceCurrent(snapshot)) error.value = e.message
   } finally {
-    comparing.value = false
+    if (isWorkspaceCurrent(snapshot)) comparing.value = false
   }
 }
 
 async function runEval() {
+  const snapshot = captureWorkspace()
   evalLoading.value = true
   evalError.value = ''
   evalResults.value = []
   try {
     const topK = Number(evalForm.value.top_k)
     const nQueries = Number(evalForm.value.n_queries)
-    if (!Number.isInteger(topK) || topK < 1 || topK > 50) throw new Error('评测 Top-K 必须是 1 到 50 的整数')
-    if (!Number.isInteger(nQueries) || nQueries < 1 || nQueries > 500) throw new Error('查询样本数必须是 1 到 500 的整数')
+    if (!Number.isInteger(topK) || topK < 1 || topK > maxTopK.value) {
+      throw new Error(`评测 Top-K 必须是 1 到 ${maxTopK.value} 的整数`)
+    }
+    if (!Number.isInteger(nQueries) || nQueries < 1 || nQueries > maxEvalQueries.value) {
+      throw new Error(`查询样本数必须是 1 到 ${maxEvalQueries.value} 的整数`)
+    }
     const data = await apiRequest('/api/eval', {
       method: 'POST',
       body: JSON.stringify({
@@ -390,29 +526,57 @@ async function runEval() {
         metric: evalForm.value.metric,
       }),
     })
+    if (!isWorkspaceCurrent(snapshot)) return
     evalResults.value = data.results
     historyRefreshKey.value += 1
   } catch (e) {
-    evalError.value = e.message
+    if (isWorkspaceCurrent(snapshot)) evalError.value = e.message
   } finally {
-    evalLoading.value = false
+    if (isWorkspaceCurrent(snapshot)) evalLoading.value = false
   }
 }
 
 async function handleDatasetChanged(nextStatus) {
-  status.value = nextStatus || await apiRequest('/api/index/status')
-  result.value = null
-  buildInfo.value = null
-  comparisonResults.value = []
-  evalResults.value = []
-  error.value = ''
-  historyRefreshKey.value += 1
+  workspaceGeneration.value += 1
+  const snapshot = captureWorkspace()
+  resourceSyncing.value = true
+  try {
+    const resolvedStatus = nextStatus || await apiRequest('/api/index/status')
+    if (!isWorkspaceCurrent(snapshot)) return
+    applyStatus(resolvedStatus)
+    result.value = null
+    buildInfo.value = null
+    comparisonResults.value = []
+    comparisonMeta.value = null
+    evalResults.value = []
+    evalError.value = ''
+    error.value = ''
+    historyRefreshKey.value += 1
+  } catch (reason) {
+    if (isWorkspaceCurrent(snapshot)) error.value = reason.message
+  } finally {
+    if (isWorkspaceCurrent(snapshot)) resourceSyncing.value = false
+  }
 }
 
 async function handleIndexChanged(nextStatus) {
-  status.value = nextStatus || await apiRequest('/api/index/status')
-  buildInfo.value = null
-  comparisonResults.value = []
+  workspaceGeneration.value += 1
+  const snapshot = captureWorkspace()
+  resourceSyncing.value = true
+  try {
+    const resolvedStatus = nextStatus || await apiRequest('/api/index/status')
+    if (!isWorkspaceCurrent(snapshot)) return
+    applyStatus(resolvedStatus)
+    result.value = null
+    buildInfo.value = null
+    comparisonResults.value = []
+    comparisonMeta.value = null
+    error.value = ''
+  } catch (reason) {
+    if (isWorkspaceCurrent(snapshot)) error.value = reason.message
+  } finally {
+    if (isWorkspaceCurrent(snapshot)) resourceSyncing.value = false
+  }
 }
 
 const queryCellForPlot = computed(() => (
@@ -420,24 +584,33 @@ const queryCellForPlot = computed(() => (
 ))
 
 onMounted(async () => {
-  if (token.value) {
+  const initialGeneration = sessionGeneration.value
+  const initialToken = token.value
+  if (initialToken) {
     try {
       const data = await apiRequest('/api/auth/me')
-      currentUser.value = data.user
-      localStorage.setItem('scann_user', JSON.stringify(data.user))
+      if (initialGeneration === sessionGeneration.value && initialToken === token.value) {
+        currentUser.value = data.user
+        localStorage.setItem('scann_user', JSON.stringify(data.user))
+      }
     } catch {
-      doLogout()
+      if (initialGeneration === sessionGeneration.value && initialToken === token.value) {
+        doLogout()
+      }
     }
   } else {
     currentUser.value = null
   }
   authReady.value = true
   if (currentUser.value) {
+    const snapshot = captureWorkspace()
     try {
-      await fetchStatus()
-      if (currentUser.value.role === 'admin') await loadUsers()
+      await fetchStatus(snapshot)
+      if (isWorkspaceCurrent(snapshot) && currentUser.value.role === 'admin') {
+        await loadUsers()
+      }
     } catch (e) {
-      error.value = e.message
+      if (isWorkspaceCurrent(snapshot)) error.value = e.message
     }
   }
 })
@@ -451,7 +624,7 @@ onMounted(async () => {
           <h1>scANN · 单细胞近似最近邻检索</h1>
           <p class="sub">输入查询细胞编号或向量，设置检索参数，获取 Top-K 相似细胞。</p>
         </div>
-        <div v-if="currentUser" class="user-badge">
+        <div v-if="authReady && currentUser" class="user-badge">
           <span class="user-name">{{ currentUser.username }}</span>
           <span class="user-role" :class="currentUser.role">{{ currentUser.role }}</span>
           <button class="btn-logout" @click="doLogout">退出</button>
@@ -513,13 +686,17 @@ onMounted(async () => {
     <DatasetManager
       :status="status"
       :is-admin="currentUser.role === 'admin'"
+      :disabled="busy"
       @changed="handleDatasetChanged"
+      @busy="datasetManagerBusy = $event"
     />
 
     <IndexManager
       :status="status"
       :is-admin="currentUser.role === 'admin'"
+      :disabled="busy"
       @changed="handleIndexChanged"
+      @busy="indexManagerBusy = $event"
     />
 
     <section class="dataset-card" v-if="status">
@@ -544,19 +721,19 @@ onMounted(async () => {
     <section class="panel">
       <div class="field" v-if="queryMode === 'cell'">
         <label>查询细胞编号</label>
-        <input type="number" v-model="form.cell_id" min="0" />
+        <input type="number" v-model="form.cell_id" min="0" :disabled="busy" />
       </div>
       <div class="field wide" v-if="queryMode === 'vector'">
         <label>查询向量（逗号分隔）</label>
-        <input v-model="form.vector" placeholder="如 0.1, 0.5, -0.3, ..." />
+        <input v-model="form.vector" :disabled="busy" placeholder="如 0.1, 0.5, -0.3, ..." />
       </div>
       <div class="field">
         <label>Top-K</label>
-        <input type="number" v-model="form.top_k" min="1" max="50" />
+        <input type="number" v-model="form.top_k" min="1" :max="maxTopK" :disabled="busy" />
       </div>
       <div class="field">
         <label>索引类型</label>
-        <select v-model="form.index_type">
+        <select v-model="form.index_type" :disabled="busy">
           <option value="flat">Flat（精确）</option>
           <option value="faiss">FAISS-Flat</option>
           <option value="ivf">FAISS-IVF</option>
@@ -566,7 +743,7 @@ onMounted(async () => {
       </div>
       <div class="field">
         <label>距离度量</label>
-        <select v-model="form.metric">
+        <select v-model="form.metric" :disabled="busy">
           <option value="l2">L2（平方欧氏）</option>
           <option value="cosine">Cosine（余弦距离）</option>
           <option value="ip">IP（内积）</option>
@@ -574,11 +751,11 @@ onMounted(async () => {
       </div>
       <div class="field">
         <label>限定细胞类型（可选）</label>
-        <input v-model="form.cell_type" placeholder="如 type_1" />
+        <input v-model="form.cell_type" :disabled="busy" placeholder="如 type_1" />
       </div>
       <div class="field">
         <label>对比索引</label>
-        <select v-model="form.compare_index_type">
+        <select v-model="form.compare_index_type" :disabled="busy">
           <option value="hnsw">FAISS-HNSW</option>
           <option value="ivf">FAISS-IVF</option>
           <option value="faiss">FAISS-Flat</option>
@@ -603,7 +780,7 @@ onMounted(async () => {
     <section class="comparison" v-if="comparisonResults.length">
       <div class="section-heading">
         <h2>索引对比</h2>
-        <span>Flat vs {{ indexLabel(form.compare_index_type) }}</span>
+        <span>Flat vs {{ indexLabel(comparisonMeta?.target) }} · {{ comparisonMeta?.metric }}</span>
       </div>
       <div class="comparison-table">
         <div class="comparison-row comparison-head">
@@ -611,7 +788,7 @@ onMounted(async () => {
           <span>查询耗时</span>
           <span>返回数</span>
           <span>首位结果</span>
-          <span>{{ valueLabel }}</span>
+          <span>{{ comparisonValueLabel }}</span>
         </div>
         <div class="comparison-row" v-for="item in comparisonResults" :key="item.index_type">
           <span>
@@ -634,22 +811,22 @@ onMounted(async () => {
       <div class="eval-form">
         <div class="eval-checkboxes">
           <label v-for="type in ['flat','faiss','ivf','hnsw','pq']" :key="type">
-            <input type="checkbox" :value="type" v-model="evalForm.index_types" />
+            <input type="checkbox" :value="type" v-model="evalForm.index_types" :disabled="busy" />
             {{ indexLabel(type) }}
           </label>
         </div>
         <div class="eval-fields">
           <div class="field">
             <label>Top-K</label>
-            <input type="number" v-model="evalForm.top_k" min="1" max="50" />
+            <input type="number" v-model="evalForm.top_k" min="1" :max="maxTopK" :disabled="busy" />
           </div>
           <div class="field">
             <label>查询样本数</label>
-            <input type="number" v-model="evalForm.n_queries" min="1" max="500" />
+            <input type="number" v-model="evalForm.n_queries" min="1" :max="maxEvalQueries" :disabled="busy" />
           </div>
           <div class="field">
             <label>距离度量</label>
-            <select v-model="evalForm.metric">
+            <select v-model="evalForm.metric" :disabled="busy">
               <option value="l2">L2（平方欧氏）</option>
               <option value="cosine">Cosine（余弦距离）</option>
               <option value="ip">IP（内积）</option>
@@ -666,7 +843,10 @@ onMounted(async () => {
           <thead>
             <tr>
               <th>索引</th>
-              <th>Recall@{{ evalResults[0]?.top_k }}</th>
+              <th>
+                Recall@{{ evalEffectiveTopK }}
+                <small v-if="evalEffectiveTopK !== evalRequestedTopK">请求 K={{ evalRequestedTopK }}</small>
+              </th>
               <th>平均查询耗时</th>
               <th>构建耗时</th>
             </tr>
@@ -681,7 +861,10 @@ onMounted(async () => {
           </tbody>
         </table>
         <div class="eval-chart">
-          <div class="eval-chart-heading">Recall@{{ evalResults[0]?.top_k }} 对比</div>
+          <div class="eval-chart-heading">
+            Recall@{{ evalEffectiveTopK }} 对比
+            <small v-if="evalEffectiveTopK !== evalRequestedTopK">（请求 K={{ evalRequestedTopK }}）</small>
+          </div>
           <div class="eval-bar-list">
             <div class="eval-bar-item" v-for="row in evalResults" :key="`bar-${row.index_type}`">
               <span class="eval-bar-label">{{ indexLabel(row.index_type) }}</span>
@@ -704,6 +887,7 @@ onMounted(async () => {
         v-if="resultRows.length"
         :result="result"
         :query-cell-id="queryCellForPlot"
+        :max-points="maxVisualizationPoints"
       />
       <div v-if="resultRows.length" class="visual-grid">
         <article class="visual-card summary-card">
@@ -786,7 +970,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <HistoryPanel :refresh-key="historyRefreshKey" />
+    <HistoryPanel :refresh-key="historyRefreshKey" :is-admin="currentUser.role === 'admin'" />
     </template>
   </div>
 </template>

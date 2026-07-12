@@ -5,6 +5,7 @@ import { apiRequest } from '../api'
 const props = defineProps({
   result: { type: Object, required: true },
   queryCellId: { type: Number, default: null },
+  maxPoints: { type: Number, default: 1200 },
 })
 
 const projection = ref(null)
@@ -62,7 +63,7 @@ async function loadProjection() {
     if (Number.isInteger(props.queryCellId)) ids.unshift(props.queryCellId)
     const params = new URLSearchParams({
       method: method.value,
-      max_points: '1200',
+      max_points: String(Math.min(1200, Math.max(10, props.maxPoints))),
       include_ids: [...new Set(ids)].slice(0, 101).join(','),
     })
     projection.value = await apiRequest(`/api/visualization/embedding?${params}`)

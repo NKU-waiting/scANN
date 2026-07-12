@@ -7,6 +7,7 @@
 
 后续可在此接入真实预处理流程：QC → 标准化 → 对数变换 → 高变基因 → 缩放 → PCA。
 """
+
 from __future__ import annotations
 
 import csv
@@ -22,9 +23,9 @@ class CellDataset:
     """内存中的单细胞向量数据集。"""
 
     name: str
-    vectors: np.ndarray                 # shape: (n_cells, dim), float32
-    cell_ids: list[str]                 # 每个细胞的标识
-    obs: dict[str, list] = field(default_factory=dict)   # 元数据，如 cell_type
+    vectors: np.ndarray  # shape: (n_cells, dim), float32
+    cell_ids: list[str]  # 每个细胞的标识
+    obs: dict[str, list] = field(default_factory=dict)  # 元数据，如 cell_type
     record_id: int | None = None
     fingerprint: str | None = None
     source_path: str | None = None
@@ -184,6 +185,38 @@ def file_sha256(path: str) -> str:
     return digest.hexdigest()
 
 
+def semantic_dataset_fingerprint(
+    dataset: CellDataset,
+    source_fingerprint: str,
+    representation: str | None,
+) -> str:
+    """Bind identity to source bytes, selected representation, vectors, and row order."""
+    try:
+        source_digest = bytes.fromhex(source_fingerprint)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("源文件指纹格式无效") from exc
+    if len(source_digest) != 32:
+        raise ValueError("源文件指纹格式无效")
+
+    digest = hashlib.sha256()
+    digest.update(b"scann-dataset-fingerprint-v2\0")
+    digest.update(source_digest)
+    for value in (dataset.source_format, representation or "X"):
+        encoded = value.encode("utf-8")
+        digest.update(len(encoded).to_bytes(4, "big"))
+        digest.update(encoded)
+
+    vectors = np.ascontiguousarray(dataset.vectors, dtype=np.dtype("<f4"))
+    digest.update(vectors.shape[0].to_bytes(8, "big"))
+    digest.update(vectors.shape[1].to_bytes(8, "big"))
+    digest.update(memoryview(vectors).cast("B"))
+    for cell_id in dataset.cell_ids:
+        encoded = str(cell_id).encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return digest.hexdigest()
+
+
 def _to_float32_matrix(values, source: str) -> np.ndarray:
     """Convert AnnData matrix-like values into a float32 ndarray."""
     if hasattr(values, "toarray"):
@@ -205,16 +238,15 @@ def _validate_vectors(vectors: np.ndarray, n_obs: int, source: str) -> np.ndarra
     if vectors.shape[1] == 0:
         raise ValueError("向量维度异常：至少需要 1 个特征")
     if vectors.shape[0] != n_obs:
-        raise ValueError(
-            f"向量行数与细胞数量不一致：向量 {vectors.shape[0]} 行，细胞 {n_obs} 个"
-        )
+        raise ValueError(f"向量行数与细胞数量不一致：向量 {vectors.shape[0]} 行，细胞 {n_obs} 个")
     if not np.isfinite(vectors).all():
         raise ValueError("向量数据包含 NaN 或 Inf")
     return np.ascontiguousarray(vectors, dtype=np.float32)
 
 
-def make_demo_dataset(n_cells: int = 2000, dim: int = 50, n_types: int = 5,
-                      seed: int = 42) -> CellDataset:
+def make_demo_dataset(
+    n_cells: int = 2000, dim: int = 50, n_types: int = 5, seed: int = 42
+) -> CellDataset:
     """生成可复现的演示数据集：若干高斯簇模拟不同细胞类型。"""
     rng = np.random.default_rng(seed)
     centers = rng.normal(0, 10, size=(n_types, dim)).astype(np.float32)

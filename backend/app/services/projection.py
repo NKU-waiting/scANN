@@ -1,4 +1,5 @@
 """Cached deterministic 2D UMAP/PCA projections for result visualization."""
+
 from __future__ import annotations
 
 import threading
@@ -38,11 +39,17 @@ class ProjectionService:
         if any(not 0 <= index < dataset.n_cells for index in include_ids):
             raise ValueError("include_ids 包含越界细胞编号")
 
-        key = (dataset.fingerprint, min(max_points, dataset.n_cells), method)
+        key = (
+            dataset.record_id,
+            dataset.source_path,
+            dataset.fingerprint,
+            min(max_points, dataset.n_cells),
+            method,
+        )
         with self._lock:
             entry = self._cache.get(key)
             if entry is None:
-                entry = self._fit(dataset.vectors, key[1], method, dataset.fingerprint)
+                entry = self._fit(dataset.vectors, key[3], method, dataset.fingerprint)
                 self._cache[key] = entry
                 while len(self._cache) > self._max_cache_entries:
                     self._cache.popitem(last=False)
@@ -134,9 +141,7 @@ class ProjectionService:
         mean, components = entry.transformer
         coordinates = (vectors - mean) @ components.T
         if coordinates.shape[1] == 1:
-            coordinates = np.column_stack(
-                [coordinates[:, 0], np.zeros(vectors.shape[0])]
-            )
+            coordinates = np.column_stack([coordinates[:, 0], np.zeros(vectors.shape[0])])
         return np.asarray(coordinates, dtype=np.float32)
 
 

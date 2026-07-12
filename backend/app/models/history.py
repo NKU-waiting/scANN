@@ -1,7 +1,8 @@
 """Durable query and evaluation run history without storing raw query vectors."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.extensions import db
 
@@ -10,7 +11,12 @@ class QueryLog(db.Model):
     __tablename__ = "query_logs"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     dataset_id = db.Column(db.Integer, nullable=True, index=True)
     dataset_name = db.Column(db.String(100), nullable=False)
     dataset_fingerprint = db.Column(db.String(64), nullable=False)
@@ -25,7 +31,7 @@ class QueryLog(db.Model):
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         index=True,
     )
 
@@ -51,7 +57,12 @@ class EvaluationLog(db.Model):
     __tablename__ = "evaluation_logs"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     dataset_id = db.Column(db.Integer, nullable=True, index=True)
     dataset_name = db.Column(db.String(100), nullable=False)
     dataset_fingerprint = db.Column(db.String(64), nullable=False)
@@ -63,7 +74,7 @@ class EvaluationLog(db.Model):
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         index=True,
     )
 

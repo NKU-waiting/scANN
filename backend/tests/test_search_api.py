@@ -1,4 +1,5 @@
 """API regression tests for retrieval and index-building contracts."""
+
 from __future__ import annotations
 
 import sys
@@ -44,7 +45,7 @@ def test_health_check(client):
     assert response.get_json() == {
         "service": "scANN",
         "status": "ok",
-        "version": "0.1.0",
+        "version": "1.0.0",
     }
 
 
@@ -132,6 +133,21 @@ def test_cosine_search_has_explicit_score_semantics(client):
     assert payload["metric"] == "cosine"
     assert payload["score_kind"] == "cosine_distance"
     assert payload["higher_is_better"] is False
+
+
+def test_inner_product_search_has_descending_score_semantics(client):
+    response = client.post(
+        "/api/search",
+        json={"cell_id": 0, "top_k": 5, "index_type": "faiss", "metric": "ip"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    scores = [row["distance"] for row in payload["results"]]
+    assert payload["metric"] == "ip"
+    assert payload["score_kind"] == "inner_product"
+    assert payload["higher_is_better"] is True
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_failed_index_build_keeps_previous_ready_index(client):

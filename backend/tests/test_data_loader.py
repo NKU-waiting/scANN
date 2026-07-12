@@ -1,4 +1,5 @@
 """Regression tests for supported managed dataset formats."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -30,9 +31,7 @@ def test_load_npy_rejects_pickle_payload(tmp_path):
 def test_load_csv_supports_ids_features_and_metadata(tmp_path):
     path = tmp_path / "cells.csv"
     path.write_text(
-        "cell_id,gene_a,obs:cell_type,gene_b\n"
-        "cell-a,1.0,T-cell,2.0\n"
-        "cell-b,3.5,B-cell,4.5\n",
+        "cell_id,gene_a,obs:cell_type,gene_b\ncell-a,1.0,T-cell,2.0\ncell-b,3.5,B-cell,4.5\n",
         encoding="utf-8",
     )
 
