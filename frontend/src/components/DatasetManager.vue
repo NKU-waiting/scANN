@@ -7,7 +7,7 @@ const props = defineProps({
   isAdmin: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
 })
-const emit = defineEmits(['changed', 'busy'])
+const emit = defineEmits(['changed', 'busy', 'resources'])
 
 const datasets = ref([])
 const loading = ref(false)
@@ -25,6 +25,7 @@ async function reload() {
   try {
     const data = await apiRequest('/api/datasets')
     datasets.value = data.datasets
+    emit('resources', data.datasets)
   } catch (reason) {
     error.value = reason.message
   } finally {

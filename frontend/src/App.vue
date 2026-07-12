@@ -2,6 +2,7 @@
 import { computed, ref, onMounted } from 'vue'
 import DatasetManager from './components/DatasetManager.vue'
 import EmbeddingPlot from './components/EmbeddingPlot.vue'
+import FederatedSearch from './components/FederatedSearch.vue'
 import HistoryPanel from './components/HistoryPanel.vue'
 import IndexManager from './components/IndexManager.vue'
 import { apiRequest, configureApi } from './api'
@@ -176,7 +177,9 @@ const evalError = ref('')
 const historyRefreshKey = ref(0)
 const datasetManagerBusy = ref(false)
 const indexManagerBusy = ref(false)
+const federatedBusy = ref(false)
 const resourceSyncing = ref(false)
+const datasetResources = ref([])
 
 function resetWorkspaceState() {
   userList.value = []
@@ -200,7 +203,9 @@ function resetWorkspaceState() {
   historyRefreshKey.value = 0
   datasetManagerBusy.value = false
   indexManagerBusy.value = false
+  federatedBusy.value = false
   resourceSyncing.value = false
+  datasetResources.value = []
 }
 
 function captureWorkspace() {
@@ -245,6 +250,7 @@ const busy = computed(() => (
   || evalLoading.value
   || datasetManagerBusy.value
   || indexManagerBusy.value
+  || federatedBusy.value
   || resourceSyncing.value
 ))
 
@@ -696,6 +702,7 @@ onMounted(async () => {
       :disabled="busy"
       @changed="handleDatasetChanged"
       @busy="datasetManagerBusy = $event"
+      @resources="datasetResources = $event"
     />
 
     <IndexManager
@@ -704,6 +711,12 @@ onMounted(async () => {
       :disabled="busy"
       @changed="handleIndexChanged"
       @busy="indexManagerBusy = $event"
+    />
+
+    <FederatedSearch
+      :datasets="datasetResources"
+      :disabled="busy"
+      @busy="federatedBusy = $event"
     />
 
     <section class="dataset-card" v-if="status">

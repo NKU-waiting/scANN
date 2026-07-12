@@ -47,6 +47,7 @@ describe('DatasetManager', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('uploaded')
+    expect(wrapper.emitted('resources')?.[0]).toEqual([resources])
     const switchButtons = wrapper.findAll('button').filter(button => button.text() === '切换')
     await switchButtons.at(-1).trigger('click')
     await flushPromises()

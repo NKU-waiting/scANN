@@ -71,6 +71,16 @@ class DatasetService:
             resources.extend(record.to_dict(active=record.id == active_id) for record in records)
             return resources
 
+    def load_many(self, dataset_ids: list[int]):
+        """Load an ordered, verified snapshot of managed datasets under the lifecycle lock."""
+        with search_service.lifecycle_lock():
+            records = DatasetRecord.query.filter(DatasetRecord.id.in_(dataset_ids)).all()
+            by_id = {record.id: record for record in records}
+            missing = [dataset_id for dataset_id in dataset_ids if dataset_id not in by_id]
+            if missing:
+                raise DatasetNotFoundError(f"数据集不存在: {missing}")
+            return [self._load_record(by_id[dataset_id]) for dataset_id in dataset_ids]
+
     def upload(
         self,
         uploaded: FileStorage,
@@ -192,6 +202,9 @@ class DatasetService:
                 raise
             cleanup.finalize()
             tombstone.unlink(missing_ok=True)
+            from app.services.federated import federated_search_service
+
+            federated_search_service.invalidate_dataset(dataset_id)
             return {"message": "数据集已删除", "id": dataset_id, "name": name}
 
     def restore_active(self) -> dict | None:

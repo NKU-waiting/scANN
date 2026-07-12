@@ -68,6 +68,8 @@ class Config:
     MAX_TOP_K = int(os.environ.get("SCANN_MAX_TOP_K", 1000))
     MAX_EVAL_QUERIES = int(os.environ.get("SCANN_MAX_EVAL_QUERIES", 1000))
     MAX_VISUALIZATION_POINTS = int(os.environ.get("SCANN_MAX_VISUALIZATION_POINTS", 3000))
+    MAX_FEDERATED_DATASETS = int(os.environ.get("SCANN_MAX_FEDERATED_DATASETS", 10))
+    MAX_FEDERATED_CELLS = int(os.environ.get("SCANN_MAX_FEDERATED_CELLS", 1_000_000))
     NUMBA_CACHE_DIR = os.environ.get(
         "SCANN_NUMBA_CACHE_DIR",
         str(

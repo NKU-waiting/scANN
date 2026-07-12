@@ -156,6 +156,38 @@ JSON 错误统一包含 `error`；框架级错误还包含 `status`。参数错�
 
 成功查询会写入历史并返回 `query_id`，但原始查询向量不会落库。
 
+## 多数据集联合检索
+
+联合检索只接受受管理数据集，不把 demo 数据加入集合。所选数据集必须具有相同向量维度；此外，调用方必须提供共享向量空间标识并确认向量确实由相同特征顺序或同一 embedding 模型产生。服务不会把两个维度相同但基底不同的 PCA 自动对齐。
+
+### `GET /api/federated/index/status`
+
+返回进程内联合索引状态、成员数据集、联合指纹、共享空间标识、规模、算法参数与兼容性声明。成员数据集删除后，引用它的联合索引立即失效。
+
+### `POST /api/federated/index`
+
+```json
+{
+  "dataset_ids": [1, 2],
+  "embedding_space": "atlas-pca-v1",
+  "confirm_shared_space": true,
+  "index_type": "hnsw",
+  "metric": "cosine"
+}
+```
+
+`dataset_ids` 至少包含两个不重复的正整数。服务按数据集 ID 规范化成员顺序，逐个校验文件与语义指纹，再在候选对象上构建联合索引；全部成功后才发布。联合指纹绑定共享空间标识、成员 ID 和成员指纹。数据集数量与细胞总数分别受 `SCANN_MAX_FEDERATED_DATASETS` 和 `SCANN_MAX_FEDERATED_CELLS` 限制。
+
+### `POST /api/federated/search`
+
+按联合成员中的细胞查询：
+
+```json
+{"query_dataset_id": 1, "cell_id": 7, "top_k": 10, "cell_type": "T cell"}
+```
+
+也可提供 `vector` 代替 `query_dataset_id + cell_id`。结果行包含 `dataset_id`、`dataset`、本地 `cell_id`、`cell_name`、联合 `global_cell_id` 和稳定的 `composite_id`。按细胞查询只排除该数据集中的查询细胞，不会错误排除另一个数据集中具有相同本地编号的细胞。`cell_type` 存在时，在所有成员数据集的匹配子集上执行精确检索。
+
 ## 性能评测
 
 ### `POST /api/eval`
