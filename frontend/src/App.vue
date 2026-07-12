@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
+import CellAssistant from './components/CellAssistant.vue'
 import DatasetManager from './components/DatasetManager.vue'
 import EmbeddingPlot from './components/EmbeddingPlot.vue'
 import FederatedSearch from './components/FederatedSearch.vue'
@@ -179,6 +180,7 @@ const historyRefreshKey = ref(0)
 const datasetManagerBusy = ref(false)
 const indexManagerBusy = ref(false)
 const federatedBusy = ref(false)
+const assistantBusy = ref(false)
 const resourceSyncing = ref(false)
 const datasetResources = ref([])
 
@@ -206,6 +208,7 @@ function resetWorkspaceState() {
   datasetManagerBusy.value = false
   indexManagerBusy.value = false
   federatedBusy.value = false
+  assistantBusy.value = false
   resourceSyncing.value = false
   datasetResources.value = []
 }
@@ -254,6 +257,7 @@ const busy = computed(() => (
   || datasetManagerBusy.value
   || indexManagerBusy.value
   || federatedBusy.value
+  || assistantBusy.value
   || resourceSyncing.value
 ))
 
@@ -732,6 +736,12 @@ onMounted(async () => {
       :datasets="datasetResources"
       :disabled="busy"
       @busy="federatedBusy = $event"
+    />
+
+    <CellAssistant
+      :datasets="datasetResources"
+      :disabled="busy"
+      @busy="assistantBusy = $event"
     />
 
     <section class="dataset-card" v-if="status">

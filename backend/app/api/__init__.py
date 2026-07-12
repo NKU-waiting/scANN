@@ -2,6 +2,7 @@
 
 from flask import Flask
 
+from .assistant import bp as assistant_bp
 from .auth import bp as auth_bp
 from .datasets import bp as datasets_bp
 from .eval import bp as eval_bp
@@ -14,6 +15,7 @@ from .visualization import bp as visualization_bp
 
 def register_blueprints(app: Flask) -> None:
     app.register_blueprint(auth_bp)
+    app.register_blueprint(assistant_bp)
     app.register_blueprint(datasets_bp)
     app.register_blueprint(index_bp)
     app.register_blueprint(search_bp)

@@ -1,6 +1,6 @@
 # scANN：单细胞近似最近邻检索系统
 
-scANN 是一个面向单细胞高维向量的课程级 Web 检索系统。后端使用 Flask、SQLAlchemy、NumPy、FAISS 和 UMAP，前端使用 Vue 3 与 Vite。系统覆盖数据导入、精确/近似索引、条件 Top-K 查询、多数据集联合检索、性能评测、二维结果展示、账户与管理员管理，以及数据集和索引持久化。
+scANN 是一个面向单细胞高维向量的课程级 Web 检索系统。后端使用 Flask、SQLAlchemy、NumPy、FAISS 和 UMAP，前端使用 Vue 3 与 Vite。系统覆盖数据导入、精确/近似索引、条件 Top-K 查询、多数据集联合检索、证据约束的自然语言 RAG、性能评测、二维结果展示、账户与管理员管理，以及数据集和索引持久化。
 
 ## 已完成功能
 
@@ -11,6 +11,7 @@ scANN 是一个面向单细胞高维向量的课程级 Web 检索系统。后端
 | 索引管理 | NumPy Flat；FAISS Flat、IVF、HNSW、PQ、PQ 候选精确重排；构建、保存、清单校验、加载、列出、删除 |
 | 查询检索 | 细胞编号或向量查询；L2、Cosine、IP；Top-K；`cell_type` 保证型条件检索 |
 | 联合检索 | 多数据集联合建索引；共享空间确认；复合细胞身份；跨数据集来源追踪与条件检索 |
+| RAG 助手 | 自然语言检索计划；真实细胞/数据集引用；本地证据摘要；可选 OpenAI Responses 生成 |
 | 评测分析 | Flat ground truth、Recall@K、平均查询/构建耗时、序列化索引字节、PQ 改进成对对比 |
 | 可视化 | 结果表、距离/得分条形图、类型分布、UMAP/PCA 散点图与查询/近邻高亮 |
 | 运行历史 | 查询与评测记录入库；原始查询向量不落库；用户隔离和管理员全局视图 |
@@ -27,6 +28,7 @@ Flask API ── SQLAlchemy/SQLite（用户、数据集、索引元信息、历�
   ├─ 数据加载：AnnData / NumPy / CSV
   ├─ 检索：NumPy Flat / FAISS Flat、IVF、HNSW、PQ、PQ 精确重排
   ├─ 联合检索：共享向量空间中的多数据集快照 + 来源映射
+  ├─ RAG：受限自然语言计划 + 精确证据检索 + 引用白名单生成
   ├─ 评测：Flat ground truth + Recall@K + 查询/构建耗时 + 索引字节
   └─ 可视化：UMAP / PCA 投影
 
@@ -90,8 +92,9 @@ npm run dev
 5. 保存当前索引；构建其他索引后可重新加载已保存索引。
 6. 上传至少两个同空间数据集后，可填写共享空间标识，构建联合索引并执行跨数据集查询。
 7. 在性能评测同时选择 PQ 与“PQ + 精确重排”，查看相同查询集上的精度、耗时和索引字节权衡。
-8. 查看 UMAP/PCA、索引对比和运行历史。
-9. 管理员可删除非活动数据集、非活动索引和普通用户。
+8. 在 RAG 助手选择数据集并提出自然语言问题，核对检索计划、回答引用和证据表。
+9. 查看 UMAP/PCA、索引对比和运行历史。
+10. 管理员可删除非活动数据集、非活动索引和普通用户。
 
 ## 数据格式
 
@@ -118,6 +121,7 @@ npm run dev
 | POST | `/api/search` | 条件 Top-K 检索 |
 | GET/POST | `/api/federated/index/status`、`/api/federated/index` | 联合索引状态、构建 |
 | POST | `/api/federated/search` | 跨数据集 Top-K 检索 |
+| GET/POST | `/api/assistant/status`、`/api/assistant/query` | provider 状态、证据约束自然语言分析 |
 | POST | `/api/eval` | 多索引性能评测 |
 | GET | `/api/visualization/embedding` | UMAP/PCA 二维投影 |
 | GET | `/api/history/queries`、`/api/history/evaluations` | 查询与评测历史 |
@@ -155,6 +159,7 @@ npm run build
 - JWT 每次请求都会查询当前数据库用户并校验不可复用的登录版本；用户删除或数字 ID 复用后旧 token 仍然失效。
 - 数据路径、索引路径和文件名均经过目录边界与指纹校验。
 - 查询历史不保存原始向量；日志不记录 token、密码或上传内容。
+- RAG 上下文不含原始向量；问题与回答不写入历史；provider 密钥不进入状态、响应或日志。
 - 上传上限、Top-K、评测查询数、可视化点数、联合数据集数和联合细胞总数均可配置且有服务端上界。
 
 后端配置示例见 [.env.example](.env.example)，开发代理示例见 [frontend/.env.example](frontend/.env.example)。
@@ -166,11 +171,12 @@ npm run build
 - [用户手册](doc/USER_GUIDE.md)
 - [测试与验收说明](doc/TESTING.md)
 - [PQ 候选精确重排说明](doc/ANN_IMPROVEMENT.md)
+- [RAG 单细胞分析助手](doc/RAG_ASSISTANT.md)
 - [结项交付说明](doc/FINAL_SUBMISSION.md)
 - [结项功能清单](doc/FINAL_CHECKLIST.md)
 
 ## 当前边界
 
-本项目面向单机课程演示。活动数据集、已加载索引和联合索引在单进程内共享；数据库、上传文件和单数据集索引文件可跨重启恢复，但联合索引需在进程重启后重建，也不支持多进程 worker 之间的活动状态同步。联合检索只验证维度并要求用户确认共享 embedding 空间，不会自动对齐不同 PCA 基底或执行批次校正。UMAP 首次运行需要 Numba 编译，后续会使用运行时缓存。系统不包含原始测序质控、复杂生物学注释、多租户隔离或工业级任务队列。
+本项目面向单机课程演示。活动数据集、已加载索引和联合索引在单进程内共享；数据库、上传文件和单数据集索引文件可跨重启恢复，但联合索引需在进程重启后重建，也不支持多进程 worker 之间的活动状态同步。联合检索和 RAG 只验证维度并要求用户确认共享 embedding 空间，不会自动对齐不同 PCA 基底或执行批次校正。自然语言解析针对可验证的细胞名、类型、K 和度量，不是开放域生物医学代理。UMAP 首次运行需要 Numba 编译，后续会使用运行时缓存。系统不包含原始测序质控、多租户隔离或工业级任务队列。
 
 真实数据来源、许可、成员贡献度、远程仓库链接和演示视频属于项目组提交信息，需在交付前由负责人补充，仓库不会虚构这些内容。

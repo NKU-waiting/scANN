@@ -41,8 +41,8 @@ class FederatedCollection:
     """Immutable joint vector snapshot with reversible source-cell identities."""
 
     def __init__(self, datasets: list[CellDataset], embedding_space: str):
-        if len(datasets) < 2:
-            raise ValueError("联合索引至少需要 2 个数据集")
+        if not datasets:
+            raise ValueError("向量集合至少需要 1 个数据集")
         dimensions = {dataset.dim for dataset in datasets}
         if len(dimensions) != 1:
             details = ", ".join(f"{dataset.name}={dataset.dim}" for dataset in datasets)

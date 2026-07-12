@@ -57,12 +57,22 @@ def _validate_config(app: Flask) -> None:
         "MAX_TOP_K": 1,
         "MAX_EVAL_QUERIES": 1,
         "MAX_VISUALIZATION_POINTS": 10,
+        "MAX_FEDERATED_DATASETS": 2,
+        "MAX_FEDERATED_CELLS": 1,
+        "MAX_ASSISTANT_CELLS": 1,
+        "MAX_ASSISTANT_EVIDENCE": 1,
+        "MAX_ASSISTANT_QUESTION_CHARS": 1,
+        "OPENAI_MAX_OUTPUT_TOKENS": 1,
         "NUMBA_NUM_THREADS": 1,
     }
     for name, minimum in numeric_bounds.items():
         value = app.config.get(name)
         if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
             raise RuntimeError(f"{name} 必须是不小于 {minimum} 的整数")
+
+    timeout = app.config.get("OPENAI_TIMEOUT_SECONDS")
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout <= 300:
+        raise RuntimeError("OPENAI_TIMEOUT_SECONDS 必须大于 0 且不超过 300")
 
     if app.config["ENVIRONMENT"] != "production":
         return

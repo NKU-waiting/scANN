@@ -188,6 +188,39 @@ JSON 错误统一包含 `error`；框架级错误还包含 `status`。参数错�
 
 也可提供 `vector` 代替 `query_dataset_id + cell_id`。结果行包含 `dataset_id`、`dataset`、本地 `cell_id`、`cell_name`、联合 `global_cell_id` 和稳定的 `composite_id`。按细胞查询只排除该数据集中的查询细胞，不会错误排除另一个数据集中具有相同本地编号的细胞。`cell_type` 存在时，在所有成员数据集的匹配子集上执行精确检索。
 
+## RAG 单细胞分析助手
+
+### `GET /api/assistant/status`
+
+返回 AI provider 是否完整配置、模型标识、本地证据降级能力和问题/证据/细胞资源上限。响应不包含 API key 或 provider 地址。
+
+### `POST /api/assistant/query`
+
+自然语言解析查询细胞：
+
+```json
+{
+  "question": "请找出与 study-a/a0 最相似的 5 个细胞，并总结类型和来源。",
+  "dataset_ids": [1, 2],
+  "embedding_space": "atlas-pca-v1",
+  "confirm_shared_space": true,
+  "top_k": 5,
+  "use_ai": true
+}
+```
+
+也可显式提供 `query_dataset_id + cell_id`、`cell_type` 和 `metric`；这些字段仍由服务端校验。`dataset_ids` 是不可由问题或模型扩大的硬范围。多数据集请求必须满足共享空间契约；单数据集请求不需要该字段。
+
+成功响应包含：
+
+- `plan`：`similar_to_cell`、`cell_type_representatives` 或 `dataset_summary` 受限计划；
+- `evidence`：带 `[E#]`、来源、本地身份、类型、数值和数值语义的细胞证据；
+- `citations`：回答实际引用的 `[D#]` 数据集或 `[E#]` 细胞；
+- `generator`：`openai_responses` 或 `local_grounded`，以及安全的模型/用量信息；
+- `grounding`：集合指纹、证据数及“未暴露原始向量/非生物学定论”标志。
+
+provider 未配置时返回 `200`、`local_grounded` 和 warning。provider 超时、非法结构或越权引用返回 `502`。服务不保存问题/回答或原始向量。完整数据流、Responses 契约与安全边界见 [RAG 助手说明](RAG_ASSISTANT.md)。
+
 ## 性能评测
 
 ### `POST /api/eval`

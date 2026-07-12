@@ -70,6 +70,14 @@ class Config:
     MAX_VISUALIZATION_POINTS = int(os.environ.get("SCANN_MAX_VISUALIZATION_POINTS", 3000))
     MAX_FEDERATED_DATASETS = int(os.environ.get("SCANN_MAX_FEDERATED_DATASETS", 10))
     MAX_FEDERATED_CELLS = int(os.environ.get("SCANN_MAX_FEDERATED_CELLS", 1_000_000))
+    MAX_ASSISTANT_CELLS = int(os.environ.get("SCANN_MAX_ASSISTANT_CELLS", 100_000))
+    MAX_ASSISTANT_EVIDENCE = int(os.environ.get("SCANN_MAX_ASSISTANT_EVIDENCE", 20))
+    MAX_ASSISTANT_QUESTION_CHARS = int(os.environ.get("SCANN_MAX_ASSISTANT_QUESTION_CHARS", 2000))
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+    OPENAI_MODEL = os.environ.get("SCANN_OPENAI_MODEL", "").strip()
+    OPENAI_BASE_URL = os.environ.get("SCANN_OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+    OPENAI_TIMEOUT_SECONDS = float(os.environ.get("SCANN_OPENAI_TIMEOUT_SECONDS", 30))
+    OPENAI_MAX_OUTPUT_TOKENS = int(os.environ.get("SCANN_OPENAI_MAX_OUTPUT_TOKENS", 800))
     NUMBA_CACHE_DIR = os.environ.get(
         "SCANN_NUMBA_CACHE_DIR",
         str(

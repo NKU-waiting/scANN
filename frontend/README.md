@@ -7,6 +7,7 @@ Vue 3 + Vite 单页工作台，覆盖：
 - 数据集上传、列表、切换和删除；
 - 索引构建、保存、加载和删除；
 - 细胞/向量查询、条件过滤和索引对比；
+- 多数据集联合检索与证据约束自然语言 RAG；
 - Recall@K、查询/构建耗时、序列化索引字节和 PQ 精确重排成对评测；
 - 结果表、条形图、类型分布、UMAP/PCA SVG；
 - 查询与评测历史。
@@ -39,6 +40,7 @@ Vitest 使用 jsdom，不需要启动真实后端。`npm run preview` 只预览�
 - `src/components/DatasetManager.vue`：数据集生命周期；
 - `src/components/IndexManager.vue`：持久化索引管理；
 - `src/components/FederatedSearch.vue`：共享空间多数据集联合检索；
+- `src/components/CellAssistant.vue`：自然语言计划、证据与可选 AI 回答；
 - `src/components/EmbeddingPlot.vue`：UMAP/PCA SVG；
 - `src/components/HistoryPanel.vue`：查询/评测历史；
 - `src/*.test.js`、`src/components/*.test.js`：前端回归测试。

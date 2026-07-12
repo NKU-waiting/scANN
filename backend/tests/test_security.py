@@ -58,6 +58,11 @@ def _login(client, username="admin", password="admin123") -> str:
         ("get", "/api/history/queries", None),
         ("get", "/api/history/evaluations", None),
         ("get", "/api/visualization/embedding", None),
+        ("get", "/api/federated/index/status", None),
+        ("post", "/api/federated/index", {}),
+        ("post", "/api/federated/search", {}),
+        ("get", "/api/assistant/status", None),
+        ("post", "/api/assistant/query", {}),
     ],
 )
 def test_business_routes_require_authentication(client, method, path, payload):
