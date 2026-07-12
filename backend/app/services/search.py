@@ -5,6 +5,7 @@ import threading
 import time
 
 import numpy as np
+from flask import current_app, has_app_context
 
 from app.core.config import Config
 from app.services.data_loader import CellDataset, make_demo_dataset
@@ -28,21 +29,43 @@ class SearchService:
                 self.load_demo()
 
     def load_demo(self) -> dict:
-        dataset = make_demo_dataset(Config.DEMO_N_CELLS, Config.DEMO_DIM)
-        return self.set_dataset(dataset)
+        dataset = make_demo_dataset(
+            self._config("DEMO_N_CELLS"),
+            self._config("DEMO_DIM"),
+        )
+        return self.set_dataset(dataset, index_type="flat", metric="l2")
 
-    def set_dataset(self, dataset: CellDataset) -> dict:
+    def set_dataset(
+        self,
+        dataset: CellDataset,
+        index_type: str | None = None,
+        metric: str | None = None,
+    ) -> dict:
         """Build first, then atomically publish a new dataset/index pair."""
         if not isinstance(dataset, CellDataset):
             raise ValueError("dataset 类型无效")
         with self._lock:
-            candidate = create_index(self.index_type, dataset.dim, self.metric)
+            candidate_type = (index_type or self.index_type).strip().lower()
+            candidate_metric = (metric or self.metric).strip().lower()
+            candidate = create_index(candidate_type, dataset.dim, candidate_metric)
             t0 = time.perf_counter()
             candidate.build(dataset.vectors)
             build_ms = (time.perf_counter() - t0) * 1000
             self.dataset = dataset
             self.index = candidate
+            self.index_type = candidate_type
+            self.metric = candidate_metric
             return {**self._status_unlocked(), "build_ms": round(build_ms, 2)}
+
+    def snapshot(self) -> tuple:
+        """Capture references needed to roll back a cross-resource transaction."""
+        with self._lock:
+            return self.dataset, self.index, self.index_type, self.metric
+
+    def restore(self, snapshot: tuple) -> None:
+        """Restore a state captured by :meth:`snapshot` without rebuilding it."""
+        with self._lock:
+            self.dataset, self.index, self.index_type, self.metric = snapshot
 
     def reset(self) -> None:
         """Clear process-local state; primarily useful for isolated application tests."""
@@ -77,6 +100,8 @@ class SearchService:
     def _status_unlocked(self) -> dict:
         return {
             "dataset": self.dataset.name if self.dataset else None,
+            "dataset_id": self.dataset.record_id if self.dataset else None,
+            "dataset_fingerprint": self.dataset.fingerprint if self.dataset else None,
             "n_cells": self.dataset.n_cells if self.dataset else 0,
             "dim": self.dataset.dim if self.dataset else 0,
             "index": self.index.name if self.index else None,
@@ -199,12 +224,18 @@ class SearchService:
         return ids, values[0].tolist()
 
     # ---- guards ----
-    @staticmethod
-    def _validate_top_k(top_k: int) -> None:
+    def _validate_top_k(self, top_k: int) -> None:
         if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1:
             raise ValueError("top_k 必须是正整数")
-        if top_k > Config.MAX_TOP_K:
-            raise ValueError(f"top_k 不能超过 {Config.MAX_TOP_K}")
+        max_top_k = self._config("MAX_TOP_K")
+        if top_k > max_top_k:
+            raise ValueError(f"top_k 不能超过 {max_top_k}")
+
+    @staticmethod
+    def _config(name: str):
+        if has_app_context():
+            return current_app.config[name]
+        return getattr(Config, name)
 
     def ensure_dataset(self) -> None:
         if self.dataset is None:

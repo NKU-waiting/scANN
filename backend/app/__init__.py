@@ -30,6 +30,13 @@ def create_app(config: type[Config] = Config) -> Flask:
             db.session.add(admin)
             db.session.commit()
 
+        from app.services.datasets import dataset_service
+
+        try:
+            dataset_service.restore_active()
+        except (OSError, ValueError, RuntimeError):
+            app.logger.exception("Failed to restore the previously active dataset")
+
     register_blueprints(app)
 
     @app.get("/api/health")
