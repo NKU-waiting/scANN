@@ -11,6 +11,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from app.core.config import Config
+from app.core.security import require_admin, require_auth
 from app.services.data_loader import load_h5ad
 from app.services.search import search_service
 
@@ -18,6 +19,7 @@ bp = Blueprint("datasets", __name__, url_prefix="/api/datasets")
 
 
 @bp.get("")
+@require_auth
 def list_datasets():
     search_service.ensure_initialized()
     current = search_service.dataset
@@ -30,6 +32,7 @@ def list_datasets():
 
 
 @bp.post("/load")
+@require_auth
 def load_dataset():
     """加载数据集。默认 demo；传 path 则加载 data 目录下的 .h5ad 文件。"""
     data = request.get_json(silent=True) or {}
@@ -48,6 +51,7 @@ def load_dataset():
 
 
 @bp.delete("/<name>")
+@require_admin
 def delete_dataset(name: str):
     # TODO: 结项要求 —— 支持数据集删除与动态索引管理
     return jsonify(error="数据集删除尚未实现（骨架）"), 501

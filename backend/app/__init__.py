@@ -5,17 +5,18 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 
+from app.api import register_blueprints
 from app.core.config import Config
 from app.core.extensions import db
-from app.api import register_blueprints
+from app.core.runtime import configure_runtime
 
 
 def create_app(config: type[Config] = Config) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config)
 
-    # 前后端分离，允许前端开发服务器跨域访问 /api/*
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    configure_runtime(app)
+    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     db.init_app(app)
 
@@ -24,8 +25,8 @@ def create_app(config: type[Config] = Config) -> Flask:
         from app.models import User  # noqa: F401
         db.create_all()
         if not User.query.filter_by(role="admin").first():
-            admin = User(username="admin", role="admin")
-            admin.set_password("admin123")
+            admin = User(username=app.config["ADMIN_USERNAME"], role="admin")
+            admin.set_password(app.config["ADMIN_PASSWORD"])
             db.session.add(admin)
             db.session.commit()
 

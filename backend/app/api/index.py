@@ -5,12 +5,14 @@ GET  /api/index/status
 """
 from flask import Blueprint, jsonify, request
 
+from app.core.security import require_auth
 from app.services.search import search_service
 
 bp = Blueprint("index", __name__, url_prefix="/api/index")
 
 
 @bp.post("/build")
+@require_auth
 def build():
     try:
         data = request.get_json(silent=True)
@@ -32,6 +34,7 @@ def build():
 
 
 @bp.get("/status")
+@require_auth
 def status():
     search_service.ensure_initialized()
     return jsonify(search_service.status())

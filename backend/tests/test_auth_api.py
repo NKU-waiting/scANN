@@ -70,13 +70,13 @@ def test_login_success(client):
 def test_login_wrong_password(client):
     client.post("/api/auth/register", json={"username": "alice", "password": "pass123"})
     resp = client.post("/api/auth/login", json={"username": "alice", "password": "wrong"})
-    assert resp.status_code == 400
+    assert resp.status_code == 401
     assert "error" in resp.get_json()
 
 
 def test_login_nonexistent_user(client):
     resp = client.post("/api/auth/login", json={"username": "nobody", "password": "pass123"})
-    assert resp.status_code == 400
+    assert resp.status_code == 401
 
 
 def test_login_missing_fields(client):
@@ -125,6 +125,17 @@ def test_admin_can_list_users(client):
     assert isinstance(resp.get_json()["users"], list)
 
 
+def test_authenticated_user_can_get_current_profile(client):
+    token = _user_token(client)
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["user"]["username"] == "alice"
+
+
 def test_non_admin_cannot_list_users(client):
     token = _user_token(client)
     resp = client.get("/api/auth/users", headers={"Authorization": f"Bearer {token}"})
@@ -166,3 +177,20 @@ def test_delete_nonexistent_user(client):
     token = _admin_token(client)
     resp = client.delete("/api/auth/users/99999", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 404
+
+
+def test_admin_cannot_delete_current_account(client):
+    token = _admin_token(client)
+    users = client.get(
+        "/api/auth/users",
+        headers={"Authorization": f"Bearer {token}"},
+    ).get_json()["users"]
+    admin = next(user for user in users if user["username"] == "admin")
+
+    response = client.delete(
+        f"/api/auth/users/{admin['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert "不能删除" in response.get_json()["error"]

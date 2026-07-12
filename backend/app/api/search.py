@@ -8,12 +8,14 @@ POST /api/search
 from flask import Blueprint, jsonify, request
 
 from app.core.config import Config
+from app.core.security import require_auth
 from app.services.search import search_service
 
 bp = Blueprint("search", __name__, url_prefix="/api")
 
 
 @bp.post("/search")
+@require_auth
 def search():
     try:
         data = request.get_json(silent=True)

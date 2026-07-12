@@ -11,13 +11,43 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BASE_DIR.parent / "data"
 # 索引产物目录
 INDEX_DIR = BASE_DIR / "indices"
+LOG_DIR = BASE_DIR / "logs"
+
+DEVELOPMENT_SECRET = "scann-development-secret-key-change-before-production"
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_csv(name: str, default: str) -> list[str]:
+    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
 
 
 class Config:
-    SECRET_KEY = os.environ.get("SCANN_SECRET_KEY", "dev-secret-change-me")
+    ENVIRONMENT = os.environ.get("SCANN_ENV", "development").strip().lower()
+    SECRET_KEY = os.environ.get("SCANN_SECRET_KEY", DEVELOPMENT_SECRET)
+    DEBUG = _env_bool("SCANN_DEBUG", False)
 
     DATA_DIR = str(DATA_DIR)
     INDEX_DIR = str(INDEX_DIR)
+    LOG_DIR = str(LOG_DIR)
+    LOG_TO_FILE = _env_bool("SCANN_LOG_TO_FILE", True)
+    LOG_LEVEL = os.environ.get("SCANN_LOG_LEVEL", "INFO").upper()
+    MAX_CONTENT_LENGTH = int(os.environ.get("SCANN_MAX_UPLOAD_BYTES", 512 * 1024 * 1024))
+
+    CORS_ORIGINS = _env_csv(
+        "SCANN_CORS_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173",
+    )
+    HOST = os.environ.get("SCANN_HOST", "127.0.0.1")
+    PORT = int(os.environ.get("SCANN_PORT", 5000))
+
+    ADMIN_USERNAME = os.environ.get("SCANN_ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD = os.environ.get("SCANN_ADMIN_PASSWORD", "admin123")
 
     # 演示数据规模（无真实 .h5ad 时用于生成假向量）
     DEMO_N_CELLS = int(os.environ.get("SCANN_DEMO_N_CELLS", 2000))

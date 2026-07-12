@@ -5,6 +5,7 @@ POST /api/eval   评测一组 ANN 索引相对精确检索的召回率与查询�
 from flask import Blueprint, jsonify, request
 
 from app.core.config import Config
+from app.core.security import require_auth
 from app.services.eval import evaluate_index
 from app.services.index import VALID_INDEX_TYPES, VALID_METRICS
 from app.services.search import search_service
@@ -12,6 +13,7 @@ from app.services.search import search_service
 bp = Blueprint("eval", __name__, url_prefix="/api")
 
 @bp.post("/eval")
+@require_auth
 def evaluate():
     try:
         data = request.get_json(silent=True)

@@ -2,10 +2,11 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 from app.core.extensions import db
-from app.core.security import require_admin
+from app.core.security import require_admin, require_auth
 from app.models import User
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -29,8 +30,12 @@ def register():
 
     user = User(username=username, role="user")
     user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.add(user)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify(error="用户名已存在"), 409
     return jsonify(message="注册成功", user=user.to_dict()), 201
 
 
@@ -45,16 +50,24 @@ def login():
 
     user = User.query.filter_by(username=username).first()
     if user is None or not user.check_password(password):
-        return jsonify(error="用户名或密码错误"), 400
+        return jsonify(error="用户名或密码错误"), 401
 
     payload = {
         "sub": str(user.id),
         "username": user.username,
         "role": user.role,
+        "iss": "scann",
+        "iat": datetime.now(tz=timezone.utc),
         "exp": datetime.now(tz=timezone.utc) + timedelta(hours=24),
     }
     token = jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
     return jsonify(token=token, user=user.to_dict())
+
+
+@bp.get("/me")
+@require_auth
+def current_user():
+    return jsonify(user=g.current_user.to_dict())
 
 
 @bp.get("/users")
@@ -70,6 +83,10 @@ def delete_user(user_id):
     user = db.session.get(User, user_id)
     if user is None:
         return jsonify(error="用户不存在"), 404
+    if user.id == g.current_user.id:
+        return jsonify(error="不能删除当前登录的管理员"), 400
+    if user.role == "admin" and User.query.filter_by(role="admin").count() <= 1:
+        return jsonify(error="不能删除最后一个管理员"), 400
     db.session.delete(user)
     db.session.commit()
     return jsonify(message="删除成功")

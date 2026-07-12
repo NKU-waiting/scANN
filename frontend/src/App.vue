@@ -2,8 +2,19 @@
 import { computed, ref, onMounted } from 'vue'
 
 // ── 认证状态 ──────────────────────────────────────────────
+function readStoredUser() {
+  try {
+    return JSON.parse(localStorage.getItem('scann_user') || 'null')
+  } catch {
+    localStorage.removeItem('scann_user')
+    localStorage.removeItem('scann_token')
+    return null
+  }
+}
+
 const token = ref(localStorage.getItem('scann_token') || '')
-const currentUser = ref(JSON.parse(localStorage.getItem('scann_user') || 'null'))
+const currentUser = ref(readStoredUser())
+const authReady = ref(false)
 const authMode = ref('login')
 const authForm = ref({ username: '', password: '' })
 const authLoading = ref(false)
@@ -14,26 +25,46 @@ const userList = ref([])
 const userListLoading = ref(false)
 const userListError = ref('')
 
-function bearerHeaders() {
-  return token.value ? { Authorization: `Bearer ${token.value}` } : {}
+async function apiRequest(path, options = {}, authenticated = true) {
+  const headers = { ...(options.headers || {}) }
+  if (authenticated && token.value) headers.Authorization = `Bearer ${token.value}`
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
+
+  let response
+  try {
+    response = await fetch(path, { ...options, headers })
+  } catch {
+    throw new Error('无法连接后端服务，请确认服务已启动')
+  }
+
+  const text = await response.text()
+  let data = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = { error: text }
+    }
+  }
+  if (response.status === 401 && authenticated) doLogout()
+  if (!response.ok) throw new Error(data?.error || `请求失败（${response.status}）`)
+  return data
 }
 
 async function doLogin() {
   authLoading.value = true
   authError.value = ''
   try {
-    const r = await fetch('/api/auth/login', {
+    const data = await apiRequest('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: authForm.value.username, password: authForm.value.password }),
-    })
-    const data = await r.json()
-    if (!r.ok) throw new Error(data.error || '登录失败')
+    }, false)
     token.value = data.token
     currentUser.value = data.user
     localStorage.setItem('scann_token', data.token)
     localStorage.setItem('scann_user', JSON.stringify(data.user))
     authForm.value = { username: '', password: '' }
+    await fetchStatus()
     if (data.user.role === 'admin') await loadUsers()
   } catch (e) {
     authError.value = e.message
@@ -46,13 +77,10 @@ async function doRegister() {
   authLoading.value = true
   authError.value = ''
   try {
-    const r = await fetch('/api/auth/register', {
+    await apiRequest('/api/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: authForm.value.username, password: authForm.value.password }),
-    })
-    const data = await r.json()
-    if (!r.ok) throw new Error(data.error || '注册失败')
+    }, false)
     authMode.value = 'login'
     authError.value = '注册成功，请登录'
     authForm.value.password = ''
@@ -67,6 +95,10 @@ function doLogout() {
   token.value = ''
   currentUser.value = null
   userList.value = []
+  status.value = null
+  result.value = null
+  comparisonResults.value = []
+  evalResults.value = []
   localStorage.removeItem('scann_token')
   localStorage.removeItem('scann_user')
 }
@@ -75,9 +107,7 @@ async function loadUsers() {
   userListLoading.value = true
   userListError.value = ''
   try {
-    const r = await fetch('/api/auth/users', { headers: bearerHeaders() })
-    const data = await r.json()
-    if (!r.ok) throw new Error(data.error || '获取用户列表失败')
+    const data = await apiRequest('/api/auth/users')
     userList.value = data.users
   } catch (e) {
     userListError.value = e.message
@@ -89,14 +119,9 @@ async function loadUsers() {
 async function removeUser(userId) {
   if (!confirm('确定删除该用户？')) return
   try {
-    const r = await fetch(`/api/auth/users/${userId}`, {
+    await apiRequest(`/api/auth/users/${userId}`, {
       method: 'DELETE',
-      headers: bearerHeaders(),
     })
-    if (!r.ok) {
-      const data = await r.json()
-      throw new Error(data.error || '删除失败')
-    }
     await loadUsers()
   } catch (e) {
     userListError.value = e.message
@@ -147,7 +172,12 @@ const datasetSummary = computed(() => [
   { label: '细胞数', value: formatNumber(status.value?.n_cells || 0) },
   { label: '向量维度', value: formatNumber(status.value?.dim || 0) },
   { label: '当前索引', value: status.value?.index || '未构建' },
-  { label: '距离度量', value: status.value?.metric === 'ip' ? 'IP（内积）' : 'L2（欧氏）' },
+  {
+    label: '距离度量',
+    value: status.value?.metric === 'cosine'
+      ? 'Cosine（余弦）'
+      : status.value?.metric === 'ip' ? 'IP（内积）' : 'L2（平方欧氏）',
+  },
   { label: '元信息字段', value: metadataFields.value.length ? metadataFields.value.join('、') : '无' },
 ])
 
@@ -245,19 +275,14 @@ function buildSearchPayload(indexType = form.value.index_type) {
 }
 
 async function requestSearch(indexType) {
-  const r = await fetch('/api/search', {
+  return apiRequest('/api/search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(buildSearchPayload(indexType)),
   })
-  const data = await r.json()
-  if (!r.ok) throw new Error(data.error || '检索失败')
-  return data
 }
 
 async function fetchStatus() {
-  const r = await fetch('/api/index/status')
-  status.value = await r.json()
+  status.value = await apiRequest('/api/index/status')
 }
 
 async function search() {
@@ -278,13 +303,10 @@ async function buildIndex() {
   building.value = true
   error.value = ''
   try {
-    const r = await fetch('/api/index/build', {
+    const data = await apiRequest('/api/index/build', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ index_type: form.value.index_type, metric: form.value.metric }),
     })
-    const data = await r.json()
-    if (!r.ok) throw new Error(data.error || '构建失败')
     buildInfo.value = data
     await fetchStatus()
   } catch (e) {
@@ -343,9 +365,8 @@ async function runEval() {
   evalError.value = ''
   evalResults.value = []
   try {
-    const r = await fetch('/api/eval', {
+    const data = await apiRequest('/api/eval', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         index_types: evalForm.value.index_types,
         top_k: Number(evalForm.value.top_k),
@@ -353,8 +374,6 @@ async function runEval() {
         metric: evalForm.value.metric,
       }),
     })
-    const data = await r.json()
-    if (!r.ok) throw new Error(data.error || '评测失败')
     evalResults.value = data.results
   } catch (e) {
     evalError.value = e.message
@@ -364,8 +383,26 @@ async function runEval() {
 }
 
 onMounted(async () => {
-  await fetchStatus()
-  if (currentUser.value?.role === 'admin' && token.value) await loadUsers()
+  if (token.value) {
+    try {
+      const data = await apiRequest('/api/auth/me')
+      currentUser.value = data.user
+      localStorage.setItem('scann_user', JSON.stringify(data.user))
+    } catch {
+      doLogout()
+    }
+  } else {
+    currentUser.value = null
+  }
+  authReady.value = true
+  if (currentUser.value) {
+    try {
+      await fetchStatus()
+      if (currentUser.value.role === 'admin') await loadUsers()
+    } catch (e) {
+      error.value = e.message
+    }
+  }
 })
 </script>
 
@@ -386,7 +423,11 @@ onMounted(async () => {
     </header>
 
     <!-- 登录 / 注册面板 -->
-    <section v-if="!currentUser" class="auth-panel">
+    <section v-if="!authReady" class="auth-panel" aria-live="polite">
+      正在验证登录状态…
+    </section>
+
+    <section v-else-if="!currentUser" class="auth-panel">
       <div class="auth-tabs">
         <button :class="{ active: authMode === 'login' }" @click="authMode = 'login'; authError = ''">登录</button>
         <button :class="{ active: authMode === 'register' }" @click="authMode = 'register'; authError = ''">注册</button>
@@ -407,6 +448,7 @@ onMounted(async () => {
       <p class="auth-msg" :class="{ 'auth-ok': authError.startsWith('注册成功') }">{{ authError }}</p>
     </section>
 
+    <template v-if="authReady && currentUser">
     <!-- 管理员用户管理 -->
     <section v-if="currentUser?.role === 'admin'" class="user-mgmt">
       <div class="section-heading">
@@ -476,7 +518,8 @@ onMounted(async () => {
       <div class="field">
         <label>距离度量</label>
         <select v-model="form.metric">
-          <option value="l2">L2（欧氏）</option>
+          <option value="l2">L2（平方欧氏）</option>
+          <option value="cosine">Cosine（余弦距离）</option>
           <option value="ip">IP（内积）</option>
         </select>
       </div>
@@ -558,7 +601,8 @@ onMounted(async () => {
           <div class="field">
             <label>距离度量</label>
             <select v-model="evalForm.metric">
-              <option value="l2">L2（欧氏）</option>
+              <option value="l2">L2（平方欧氏）</option>
+              <option value="cosine">Cosine（余弦距离）</option>
               <option value="ip">IP（内积）</option>
             </select>
           </div>
@@ -684,6 +728,7 @@ onMounted(async () => {
         </tbody>
       </table>
     </section>
+    </template>
   </div>
 </template>
 

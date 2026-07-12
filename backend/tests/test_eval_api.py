@@ -25,6 +25,12 @@ def client():
     app = create_app(TestConfig)
 
     with app.test_client() as test_client:
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "admin123"},
+        )
+        token = login.get_json()["token"]
+        test_client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {token}"
         yield test_client
 
     search_service.reset()
